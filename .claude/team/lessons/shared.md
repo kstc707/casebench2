@@ -30,3 +30,10 @@ turn out wrong.
   answer"; near-miss questions got confident labels with the fact missing.
 - **An empty result should be an error, not "no match".** A wrong path silently gave an empty corpus,
   which would have looked like "not found" for everything.
+
+### From the scikit-learn track (Oct 11, Casebench 2)
+- **A test skipped in our environment can hide a broken fix.** List every skipped test and ask whether it
+  exercises the edited code: for #33643, the two tests of the edited function were skipped, and a wrong fix
+  "solved" the task.
+- **A checker that only re-runs the ids in its own manifest can't catch a weakened manifest.** Recompute
+  from the whole test file and compare.
