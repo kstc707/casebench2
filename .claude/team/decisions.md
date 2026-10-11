@@ -8,6 +8,24 @@ Casebench 1's history lives in the `kstc707/casebench` repo (`.claude/team/decis
 
 ---
 
+### 2026-10-11 · scikit-learn track runs in the browser on Pyodide 314.0.7 (scikit-learn 1.8.0) · **Decided (team lead)**
+- **What:** section 1 keeps Casebench 1's approach: students' edits are tested by scikit-learn's own tests
+  inside Pyodide in the browser. Tasks are built as "scikit-learn 1.8.0 + the real PR's change", preferring
+  fixes merged after 1.8.0, where the bug is genuinely in the shipped code.
+- **First five tasks:** PRs #33362 (empty `Pipeline` and `dir()`), #33176 (`StratifiedGroupKFold` too many
+  splits), #33127 (`_weighted_percentile` off-by-one), #33643 (image patch at full size), #34815
+  (`fetch_file` path safety). Next: #33491, #32592.
+- **Evidence:** the researcher ran 10 real merged PRs in Node with Pyodide. Each PR's tests fail on the
+  "before" code and pass after the real fix, with no other test in the file breaking. An edit re-tests in
+  about 1.3–4 s. Outputs are in the research scratch folder.
+- **Known limits:**
+  - **Not yet tested in a real browser.**
+  - First download is about 39–44 MB.
+  - Stuck on scikit-learn 1.8.0 until Pyodide updates.
+  - Results checked in the browser can be faked (as in Casebench 1).
+- **Ruled out for now:** a server sandbox. It's still the long-term answer for trusted grading and for
+  Hugging Face.
+
 ### 2026-10-11 · The team builds on its own; the owner steers at milestones · **Decided (owner)**
 - **What:** the team no longer stops to ask questions it can answer itself. It picks sensible defaults,
   records each one here so it can be reversed, and keeps building. The owner reviews at **milestones**: a

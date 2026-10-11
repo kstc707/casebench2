@@ -15,3 +15,10 @@
   repo is the source of GitHub's docs) and the paper's own repo BibTeX. Say which you used. (Librarian)
 - **Workspace packages aren't importable from root `scripts/`;** a CLI needing `@casebench/*` belongs in a
   package. (Librarian)
+
+### From the scikit-learn research (Oct 11, Casebench 2)
+- **When patching a fix onto a release, a missing test-only package looks like a broken fix.** #33491
+  showed 7 "still failing" tests that were only `No module named 'packaging'`. Run the real fix first, and
+  treat leftover failures as an environment problem until proven otherwise.
+- **From this sandbox, upstream GitHub PR pages, `.patch` and api.github.com are blocked,** but
+  `git clone` and raw.githubusercontent.com work. Plan data collection around that.

@@ -24,3 +24,8 @@
   silently broke line-range checks. (Librarian)
 - **Stemmers bite short words.** Porter's final-"e" rule turned "one" into "on". Leave ≤3-letter words
   alone, and print the matched terms while tuning. (Librarian)
+
+### From the scikit-learn research (Oct 11, Casebench 2)
+- **In a long-lived Pyodide worker, an edit to an already-imported library module is silently ignored**
+  unless it is removed from `sys.modules` first. Without clearing, #33643 stayed at 4 failed after the
+  fix; with clearing, it went to 0.
