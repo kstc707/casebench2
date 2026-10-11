@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.local
+*.log
+.DS_Store
+dist/
+build/
+.next/
+apps/web/next-env.d.ts
+*.tsbuildinfo
+apps/web/public/duckdb/
+/review-pack.md
+apps/web/public/pyodide/
+apps/web/public/pyodide-wheels/
+__pycache__/
