@@ -8,6 +8,18 @@ Casebench 1's history lives in the `kstc707/casebench` repo (`.claude/team/decis
 
 ---
 
+### 2026-10-11 · The team builds a first draft of the AI coach for the owner to use and react to · **Decided (owner)**
+- **What:** the team builds a draft coach (plan: `docs/plans/section-2-coach-draft.md`). The owner uses it,
+  gives feedback, and owns measuring it through the coach log the draft records.
+- **Why (owner):** *"deliver a draft of what the most realistic AI coach would be like… we can make changes as
+  I use it and give feedback."*
+- **Replaces:** the roadmap note that the owner builds the coach from scratch.
+- **Team-lead choices inside it:**
+  - the AI review is optional and uses the student's own Anthropic API key, in the browser, so we don't spend
+    money;
+  - model `claude-opus-5-5` at effort `medium`, structured output;
+  - retrieval reuses the librarian's BM25.
+
 ### 2026-10-11 · Section 1 plan: how the scikit-learn track is built · **Decided (team lead)**
 - **Plan:** `docs/plans/section-1-scikit-learn-track.md` (10 steps, about 5 PRs). Step 1 is a real-browser
   risk check; if Pyodide or scikit-learn won't load in a browser, the team stops and asks the owner.
