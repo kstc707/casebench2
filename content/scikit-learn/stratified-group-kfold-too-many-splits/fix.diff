@@ -1,0 +1,19 @@
+diff --git a/sklearn/model_selection/_split.py b/sklearn/model_selection/_split.py
+index 6582427d80d247767c2b984cd514a3e6fa8b6113..4b17fa7099cc61a4b7d9b256ddd3e21d176d8f8c 100644
+--- a/sklearn/model_selection/_split.py
++++ b/sklearn/model_selection/_split.py
+@@ -1045,6 +1045,14 @@ class StratifiedGroupKFold(GroupsConsumerMixin, _BaseKFold):
+         _, groups_inv, groups_cnt = np.unique(
+             groups, return_inverse=True, return_counts=True
+         )
++        n_groups = len(groups_cnt)
++
++        if self.n_splits > n_groups:
++            raise ValueError(
++                f"Cannot have number of splits n_splits={self.n_splits} greater"
++                f" than the number of groups: {n_groups}."
++            )
++
+         y_counts_per_group = np.zeros((len(groups_cnt), n_classes))
+         for class_idx, group_idx in zip(y_inv, groups_inv):
+             y_counts_per_group[group_idx, class_idx] += 1

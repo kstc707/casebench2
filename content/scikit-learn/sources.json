@@ -1,0 +1,18 @@
+{
+  "base": {
+    "commit": "646da0f072a8afef6a980aa427a710311e67eb9d",
+    "tag": "1.8.0"
+  },
+  "project": {
+    "license": "BSD-3-Clause",
+    "name": "scikit-learn",
+    "repo": "https://github.com/scikit-learn/scikit-learn"
+  },
+  "tasks": [
+    { "mergeCommit": "128c88c4b91e0fad2bcc664e4c2300804859f981", "pr": 33127, "slug": "weighted-percentile-zero-weight" },
+    { "mergeCommit": "d9a1b74f0d39ed655d7ddfe2a4303f40002ec1f8", "pr": 33643, "slug": "reconstruct-patches-full-size" },
+    { "mergeCommit": "237387b8e71e50d547d9130dd6a147bc83f37596", "pr": 33176, "slug": "stratified-group-kfold-too-many-splits" },
+    { "mergeCommit": "aab0d04a858ed2d9391b130a764ad23818b5d0a4", "pr": 34815, "slug": "fetch-file-plain-filename" },
+    { "mergeCommit": "361a8e1cc81418f3f19014752da4817b94f72657", "pr": 33362, "slug": "empty-pipeline-dir" }
+  ]
+}

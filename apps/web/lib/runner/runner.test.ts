@@ -93,6 +93,14 @@ print(json.dumps({"raised": raised, "during": seen.get("during"), "after": open(
     expect(out).toEqual({ raised: "pytest blew up", during: "edit\n", after: "shipped\n", extra: false, remembered: 0 });
   });
 
+  it("reports exact ids as given, and a whole test file as every test it ran, sorted", () => {
+    const out = py(`
+outcomes = {"a.py::t2": "passed", "a.py::t1": "failed", "ab.py::t": "passed", "b.py::x": "passed"}
+print(json.dumps(r._cb_expand_ids(["b.py::x", "a.py", "c.py", "c.py::gone"], outcomes)))
+`);
+    expect(out).toEqual(["b.py::x", "a.py::t1", "a.py::t2", "c.py", "c.py::gone"]);
+  });
+
   it("forgets every sklearn module, and only those", () => {
     const out = py(`
 import types
@@ -175,14 +183,16 @@ describe("the browser worker", () => {
 
 // The real thing: Pyodide 314.0.7 with scikit-learn 1.8.0, from public/pyodide (run `pnpm pyodide` first).
 // It takes about a minute, so it runs only when asked: `pnpm test:pyodide` (the slower "tasks" CI job).
-interface Fixture {
-  issueIds: string[];
-  before: Record<string, string>;
-  fix: Record<string, string>;
-}
-const fixture = JSON.parse(readFileSync(path.join(__dirname, "fixtures/sklearn-33127.json"), "utf8")) as Fixture;
+// #33127 as built by scripts/build-sklearn-tasks.ts (content/scikit-learn/weighted-percentile-zero-weight).
 const STATS = "sklearn/utils/stats.py";
 const TESTS = "sklearn/utils/tests/test_stats.py";
+const taskDir = path.resolve(__dirname, "../../../../content/scikit-learn/weighted-percentile-zero-weight");
+const task = JSON.parse(readFileSync(path.join(taskDir, "task.json"), "utf8")) as { failToPass: string[] };
+const fixture = {
+  issueIds: task.failToPass,
+  before: { [STATS]: readFileSync(path.join(taskDir, "before", STATS), "utf8"), [TESTS]: readFileSync(path.join(taskDir, "tests", TESTS), "utf8") },
+  fix: { [STATS]: readFileSync(path.join(taskDir, "solution", STATS), "utf8") },
+};
 
 describe.skipIf(!process.env.RUN_PYODIDE_TESTS)("the Node runner on scikit-learn #33127 (one Python)", () => {
   let runner: Runner;

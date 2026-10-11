@@ -8,7 +8,7 @@ _cb_run(files_json, ids_json):
   2. writes the given files (paths like "sklearn/utils/stats.py") over the installed scikit-learn files,
      keeping the originals;
   3. forgets every `sklearn` module already imported, so the edits take effect;
-  4. runs pytest on exactly the given test ids;
+  4. runs pytest on exactly the given test ids (a whole test file's path reports every test in it);
   5. puts the originals back again.
 It returns JSON:
   {"results": [{"id", "outcome": passed|failed|skipped|missing, "message"?}],
@@ -140,6 +140,20 @@ def _cb_collection_error(output):
     return _cb_clip([block[0].strip(" _"), *marked] if marked else block)
 
 
+def _cb_expand_ids(ids, outcomes):
+    """The ids to report: a test id ("file.py::test") as given; a whole test file ("file.py") as every
+    test pytest ran from it, sorted (or the file itself as "missing" if none ran). The task builder runs
+    whole files; the app runs exact ids."""
+    out = []
+    for i in ids:
+        if "::" in i:
+            out.append(i)
+        else:
+            found = sorted(n for n in outcomes if n.startswith(i + "::"))
+            out.extend(found or [i])
+    return out
+
+
 def _cb_run(files_json, ids_json):
     import pytest
 
@@ -182,7 +196,7 @@ def _cb_run(files_json, ids_json):
         _cb_restore()
 
     results = []
-    for i in ids:
+    for i in _cb_expand_ids(ids, outcomes):
         r = {"id": i, "outcome": outcomes.get(i, "missing")}
         if i in messages:
             r["message"] = messages[i]
