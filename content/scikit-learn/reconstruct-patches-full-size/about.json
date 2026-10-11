@@ -1,0 +1,31 @@
+{
+  "issue": {
+    "fetched": false,
+    "number": 10910,
+    "url": "https://github.com/scikit-learn/scikit-learn/issues/10910"
+  },
+  "pr": {
+    "number": 33643,
+    "url": "https://github.com/scikit-learn/scikit-learn/pull/33643"
+  },
+  "quotes": [
+    {
+      "source": "commit message",
+      "text": "FIX reconstruct_from_patches_2d when patch size equals image size (#33643)",
+      "url": "https://github.com/scikit-learn/scikit-learn/commit/d9a1b74f0d39ed655d7ddfe2a4303f40002ec1f8"
+    },
+    {
+      "source": "changelog entry",
+      "text": ":func:`feature_extraction.image.reconstruct_from_patches_2d` now produces correct results when a patch dimension equals the corresponding image dimension.",
+      "url": "https://github.com/scikit-learn/scikit-learn/blob/d9a1b74f0d39ed655d7ddfe2a4303f40002ec1f8/doc/whats_new/upcoming_changes/sklearn.feature_extraction/33643.fix.rst"
+    }
+  ],
+  "summary": "`reconstruct_from_patches_2d` rebuilds an image from overlapping patches, averaging each pixel over the patches that cover it. When a patch is as tall or as wide as the whole image (for example 128×128 patches of a 128×256 image), it divided by the wrong number of overlapping patches, so the rebuilt image was wrong. The test cuts a random image into patches and checks that putting them back gives the original image.",
+  "teaches": "Boundary conditions in array shapes",
+  "title": "Rebuilding an image when a patch is as big as the image",
+  "whereToLook": {
+    "file": "sklearn/feature_extraction/image.py",
+    "hint": "The loop at the end that divides each pixel by the amount of overlap.",
+    "symbol": "reconstruct_from_patches_2d"
+  }
+}

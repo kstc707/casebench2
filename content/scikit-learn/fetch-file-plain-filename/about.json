@@ -1,0 +1,27 @@
+{
+  "issue": null,
+  "pr": {
+    "number": 34815,
+    "url": "https://github.com/scikit-learn/scikit-learn/pull/34815"
+  },
+  "quotes": [
+    {
+      "source": "changelog entry",
+      "text": ":func:`datasets.fetch_file` now raises a `ValueError` when `local_filename` is a path instead of a plain filename.",
+      "url": "https://github.com/scikit-learn/scikit-learn/blob/aab0d04a858ed2d9391b130a764ad23818b5d0a4/doc/whats_new/upcoming_changes/sklearn.datasets/34815.fix.rst"
+    },
+    {
+      "source": "the test the fix added",
+      "text": "The check happens before any download and nothing is written to disk.",
+      "url": "https://github.com/scikit-learn/scikit-learn/commit/aab0d04a858ed2d9391b130a764ad23818b5d0a4"
+    }
+  ],
+  "summary": "`fetch_file` downloads a file into a folder, and `local_filename` lets you choose the saved file's name. Before the fix it accepted values like `\"../escaped.jsonl\"` or `\"/absolute/data.jsonl\"`, so the file could end up outside the folder you chose. The fix accepts only a plain file name and raises a `ValueError` otherwise, before anything is downloaded.",
+  "teaches": "Treating file names as untrusted input",
+  "title": "fetch_file and file names that are really paths",
+  "whereToLook": {
+    "file": "sklearn/datasets/_base.py",
+    "hint": "Where `local_filename` is chosen, before the folder is created.",
+    "symbol": "fetch_file"
+  }
+}

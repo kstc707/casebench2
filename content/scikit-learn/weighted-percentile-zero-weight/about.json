@@ -1,0 +1,27 @@
+{
+  "issue": null,
+  "pr": {
+    "number": 33127,
+    "url": "https://github.com/scikit-learn/scikit-learn/pull/33127"
+  },
+  "quotes": [
+    {
+      "source": "changelog entry",
+      "text": "Fixed ``_weighted_percentile`` with ``average=True`` so zero-weight samples just before the end of the array are handled correctly.",
+      "url": "https://github.com/scikit-learn/scikit-learn/blob/128c88c4b91e0fad2bcc664e4c2300804859f981/doc/whats_new/upcoming_changes/sklearn.utils/33127.fix.rst"
+    },
+    {
+      "source": "the test the fix added",
+      "text": "Check zero weights just before `max_index` handled correctly.",
+      "url": "https://github.com/scikit-learn/scikit-learn/commit/128c88c4b91e0fad2bcc664e4c2300804859f981"
+    }
+  ],
+  "summary": "`_weighted_percentile` is a helper scikit-learn uses to compute percentiles when samples have weights (for example in `KBinsDiscretizer` and some metrics). With `average=True`, a sample with weight zero just before the end of the array was handled wrongly, so adding a sample that should count for nothing changed the result. The test the fix added compares the percentile of [1, 3] with the percentile of [1, 2, 3] where 2 has weight 0: the two should be equal.",
+  "teaches": "Edge cases in a numerical helper",
+  "title": "Zero weights at the end of a weighted percentile",
+  "whereToLook": {
+    "file": "sklearn/utils/stats.py",
+    "hint": "The `average=True` part, where it chooses the next index after a percentile.",
+    "symbol": "_weighted_percentile"
+  }
+}
