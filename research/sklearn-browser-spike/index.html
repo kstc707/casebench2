@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>sklearn browser spike</title>
+<pre id="log">starting</pre>
+<script type="module">
+  // One module worker for the whole session; window.spike.call(msg) times each round trip.
+  const worker = new Worker("/worker.mjs", { type: "module" });
+  let next = 0; const waiting = new Map();
+  worker.onmessage = (e) => { const w = waiting.get(e.data.id); waiting.delete(e.data.id); e.data.error ? w.reject(new Error(e.data.error)) : w.resolve(e.data.result); };
+  worker.onerror = (e) => { for (const w of waiting.values()) w.reject(new Error("worker error: " + e.message)); };
+  window.spike = {
+    tasks: () => fetch("/spike-tasks.json").then((r) => r.json()),
+    call(msg) {
+      const id = ++next, t = performance.now();
+      const p = new Promise((resolve, reject) => waiting.set(id, { resolve, reject }));
+      worker.postMessage({ ...msg, id });
+      return p.then((result) => ({ ...result, wallMs: Math.round(performance.now() - t) }));
+    },
+  };
+  document.getElementById("log").textContent = "ready";
+</script>

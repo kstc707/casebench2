@@ -29,3 +29,9 @@
 - **In a long-lived Pyodide worker, an edit to an already-imported library module is silently ignored**
   unless it is removed from `sys.modules` first. Without clearing, #33643 stayed at 4 failed after the
   fix; with clearing, it went to 0.
+- **pluggy rejects a hook whose argument isn't named exactly as the hookspec says**
+  (`pytest_runtest_logreport(self, report)`); shortening it to `r` raises `PluginValidationError`.
+- **Show all the `E ` lines of a pytest failure, not just the first.** For #33643 the first was a bare
+  `AssertionError:`.
+- **In the browser, the first import of sklearn, scipy and pytest (7.7–8.4 s) costs more than downloading
+  the packages.** Do it during "loading" so the student's first click is fast.
