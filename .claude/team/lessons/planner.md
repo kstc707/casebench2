@@ -12,3 +12,9 @@
 - **A test that proves "no invention" needs questions that should come back empty.** (Librarian)
 - **Build owner decision points in after each risk check.** Evidence changed the label design twice
   (three labels → two → "nothing related" only on zero matches); each change went back to the owner.
+
+### From the scikit-learn plan (Oct 11, Casebench 2)
+- **Measure the first run and the re-runs separately.** In Node the first run took 10–11 s and re-runs
+  1.8–4.3 s; quoting one number sets the wrong expectation.
+- **Re-run a script rather than trusting its log.** `spike/rl.log` ended in an error from an older version
+  of the script.

@@ -8,6 +8,23 @@ Casebench 1's history lives in the `kstc707/casebench` repo (`.claude/team/decis
 
 ---
 
+### 2026-10-11 · Section 1 plan: how the scikit-learn track is built · **Decided (team lead)**
+- **Plan:** `docs/plans/section-1-scikit-learn-track.md` (10 steps, about 5 PRs). Step 1 is a real-browser
+  risk check; if Pyodide or scikit-learn won't load in a browser, the team stops and asks the owner.
+- **Choices:**
+  - **Pages:** one app with three static pages: home → `/scikit-learn` → `/scikit-learn/<task>`.
+  - **Storage:** progress and drafts live in the browser (localStorage). No accounts, no database.
+  - **Two buttons:** "Run the issue's tests" (fast) and "Check my fix" (every required test, the only
+    way to solve).
+  - **Packages:** Pyodide's own, self-hosted from the 314.0.7 release and pinned by SHA-256. No CDN, no
+    PyPI.
+  - **Content:** under `content/scikit-learn/<slug>/`, with generated files kept apart from our
+    hand-written words.
+  - **Quotes:** every quote from a real issue is checked word for word against a saved copy.
+  - **The real fix is committed** so CI can prove it passes. It's shown only after solving.
+  - **Testing:** the browser test runs by hand, while CI checks every task in a separate job.
+- **Left to the owner:** whether and where to deploy (publishing).
+
 ### 2026-10-11 · scikit-learn track runs in the browser on Pyodide 314.0.7 (scikit-learn 1.8.0) · **Decided (team lead)**
 - **What:** section 1 keeps Casebench 1's approach: students' edits are tested by scikit-learn's own tests
   inside Pyodide in the browser. Tasks are built as "scikit-learn 1.8.0 + the real PR's change", preferring
