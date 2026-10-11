@@ -234,6 +234,12 @@ describe.skipIf(!process.env.RUN_PYODIDE_TESTS)("the Node runner on scikit-learn
     expect(outcomes(again)).toEqual(["passed"]);
   });
 
+  it("installedFile gives the shipped 1.8.0 file, even right after a run that overwrote it", { timeout: 120_000 }, async () => {
+    await runner.run({ ...fixture.before, ...fixture.fix }, fixture.issueIds);
+    expect(runner.installedFile(STATS)).toBe(fixture.before[STATS]);
+    expect(() => runner.installedFile("pytest.py")).toThrow(/isn't a \.py file inside sklearn\//);
+  });
+
   it("refuses a file outside sklearn/", { timeout: 60_000 }, async () => {
     const r = await runner.run({ "pytest.py": "" }, fixture.issueIds);
     expect(r.error).toMatch(/isn't a \.py file inside sklearn\//);

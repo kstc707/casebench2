@@ -26,6 +26,8 @@ export interface Runner {
   versions: RunnerVersions;
   /** Runs exactly these test ids with these files written over the installed scikit-learn files. */
   run(files: Record<string, string>, testIds: string[]): Promise<RunResult>;
+  /** A file as shipped in the installed scikit-learn, e.g. "sklearn/utils/stats.py". */
+  installedFile(file: string): string;
 }
 
 /** Loads runner.py into a Pyodide that already has RUNNER_PACKAGES, and does the slow first import. */
@@ -38,6 +40,10 @@ export async function prepareRunner(py: PyodideLike): Promise<Runner> {
       py.globals.set("_cb_files", JSON.stringify(files));
       py.globals.set("_cb_ids", JSON.stringify(testIds));
       return JSON.parse(String(await py.runPythonAsync("_cb_run(_cb_files, _cb_ids)"))) as RunResult;
+    },
+    installedFile(file) {
+      py.globals.set("_cb_path", file);
+      return String(py.runPython("_cb_installed(_cb_path)"));
     },
   };
 }

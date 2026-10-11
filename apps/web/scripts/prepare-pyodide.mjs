@@ -22,7 +22,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readFile, rename, rm, stat } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -71,11 +71,35 @@ export function packagesNeeded(lock, roots = ROOT_PACKAGES) {
   return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Explains a Node file-system error in plain words, naming the path. */
+export function explain(what, file, err) {
+  const code = err && typeof err === "object" && "code" in err ? err.code : undefined;
+  const why =
+    code === "ENOENT" ? "it (or a folder above it) doesn't exist" :
+    code === "EACCES" || code === "EPERM" ? "permission denied" :
+    code === "EISDIR" ? "it is a folder, not a file" :
+    code === "ENOTDIR" ? "a part of the path is a file, not a folder" :
+    code === "ENOSPC" ? "the disk is full" :
+    String(err instanceof Error ? err.message : err);
+  return new Error(`Couldn't ${what} ${file}: ${why}`);
+}
+
+/** Runs a file-system step, turning a raw Node error into one that names the path and the problem. */
+async function onFile(what, file, step) {
+  try {
+    return await step();
+  } catch (err) {
+    throw err && typeof err === "object" && "code" in err ? explain(what, file, err) : err;
+  }
+}
+
 /** SHA-256 of a file, streamed (the tarball is 337 MB). */
 export async function sha256File(file) {
-  const hash = createHash("sha256");
-  await pipeline(createReadStream(file), hash);
-  return hash.digest("hex");
+  return onFile("read", file, async () => {
+    const hash = createHash("sha256");
+    await pipeline(createReadStream(file), hash);
+    return hash.digest("hex");
+  });
 }
 
 const exists = (p) => stat(p).then(() => true, () => false);
@@ -101,8 +125,8 @@ export async function download(url, dest, expectedSha256, fetchImpl = fetch) {
   const res = await fetchImpl(url);
   if (!res.ok || !res.body) throw new Error(`Downloading ${url}: HTTP ${res.status}`);
   const part = dest + ".part";
-  await mkdir(path.dirname(dest), { recursive: true });
-  await pipeline(Readable.fromWeb(res.body), createWriteStream(part));
+  await onFile("create the download folder", path.dirname(dest), () => mkdir(path.dirname(dest), { recursive: true }));
+  await onFile("write", part, () => pipeline(Readable.fromWeb(res.body), createWriteStream(part)));
   try {
     await assertSha256(part, expectedSha256);
   } catch (err) {
@@ -118,18 +142,28 @@ function extract(tarball, members, dir) {
     const tar = spawn("tar", ["-xjf", tarball, "-C", dir, ...members], { stdio: ["ignore", "ignore", "pipe"] });
     let err = "";
     tar.stderr.on("data", (d) => (err += d));
-    tar.on("error", reject);
+    tar.on("error", (e) => reject(e && e.code === "ENOENT" ? new Error("The system `tar` command wasn't found; it's needed to unpack the Pyodide tarball") : e));
     tar.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`tar exited with ${code}: ${err.trim()}`))));
   });
 }
 
+/**
+ * Removes anything in outDir that isn't one of the expected files: everything there is served publicly,
+ * so a stray file must not linger.
+ */
+async function removeExtras(outDir, expected, log) {
+  const keep = new Set(expected);
+  for (const name of (await readdir(outDir)).sort()) {
+    if (keep.has(name)) continue;
+    await rm(path.join(outDir, name), { recursive: true, force: true });
+    log(`pyodide: removed ${name}, which isn't part of the pinned release`);
+  }
+}
+
 /** The verified tarball's path: the one given, else the cached one, else a fresh download. */
 async function obtainTarball({ tarball, cacheDir, log, fetchImpl, tarballSha256 }) {
-  if (tarball) {
-    await assertSha256(tarball, tarballSha256);
-    log(`pyodide: using ${tarball} (SHA-256 matches)`);
-    return tarball;
-  }
+  if (tarball) return tarball; // checked at the start of preparePyodide
+
   const cached = path.join(cacheDir, TARBALL_NAME);
   if (await fileMatches(cached, tarballSha256)) {
     log(`pyodide: using the cached ${cached}`);
@@ -169,10 +203,17 @@ export async function preparePyodide({
   coreFiles = CORE_FILES,
 } = {}) {
   if (!coreFiles["pyodide-lock.json"]) throw new Error("coreFiles must pin pyodide-lock.json");
+  // A tarball you name is always checked, even when nothing needs it, so a wrong path or file is never
+  // silently ignored.
+  if (tarball) {
+    await assertSha256(tarball, tarballSha256);
+    log(`pyodide: ${tarball} is the pinned release (SHA-256 matches)`);
+  }
   const want = await expectedFiles(outDir, coreFiles);
   if (want) {
     const ok = await Promise.all(want.map((f) => fileMatches(path.join(outDir, f.file), f.sha256)));
     if (ok.every(Boolean)) {
+      await removeExtras(outDir, want.map((f) => f.file), log);
       log(`pyodide: ${PYODIDE_VERSION} already prepared in ${path.relative(process.cwd(), outDir) || "."} (${want.length} files checked)`);
       return "already prepared";
     }
@@ -191,9 +232,12 @@ export async function preparePyodide({
     await extract(source, packages.map((p) => `pyodide/${p.file}`), tmp);
     for (const p of packages) await assertSha256(path.join(tmp, "pyodide", p.file), p.sha256);
 
-    await mkdir(outDir, { recursive: true });
+    await onFile("create the output folder", outDir, () => mkdir(outDir, { recursive: true }));
     const files = [...Object.keys(coreFiles), ...packages.map((p) => p.file)];
-    for (const f of files) await copyFile(path.join(tmp, "pyodide", f), path.join(outDir, f));
+    for (const f of files) {
+      await onFile("write", path.join(outDir, f), () => copyFile(path.join(tmp, "pyodide", f), path.join(outDir, f)));
+    }
+    await removeExtras(outDir, files, log);
     log(`pyodide: ${files.length} files checked and copied to ${path.relative(process.cwd(), outDir)}`);
     return "prepared";
   } finally {

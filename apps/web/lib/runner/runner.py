@@ -207,6 +207,14 @@ def _cb_run(files_json, ids_json):
     return json.dumps({"results": results, "error": error, "durationMs": int((time.time() - start) * 1000)})
 
 
+def _cb_installed(rel):
+    """The file as shipped in the installed scikit-learn (what the task's "before" file must match)."""
+    _cb_check_path(rel)
+    _cb_restore()
+    with open(os.path.join(_cb_site, rel), encoding="utf-8", newline="") as f:
+        return f.read()
+
+
 def _cb_warm_up():
     """The first import of scikit-learn, scipy and pytest takes 7-8 s in a browser: done while loading,
     so the student's first click is fast. Returns the versions as JSON."""

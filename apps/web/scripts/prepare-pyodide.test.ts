@@ -11,6 +11,7 @@ import {
   assertSha256,
   CORE_FILES,
   download,
+  explain,
   packagesNeeded,
   preparePyodide,
   tarballFromArgs,
@@ -83,6 +84,12 @@ describe("SHA-256 pins", () => {
     expect(TARBALL_URL).toBe("https://github.com/pyodide/pyodide/releases/download/314.0.7/pyodide-314.0.7.tar.bz2");
     expect(TARBALL_SHA256).toMatch(/^192b5864[0-9a-f]{48}aeb86645$/);
     expect(Object.keys(CORE_FILES)).toContain("pyodide-lock.json");
+  });
+
+  it("CI caches the tarball under the same SHA-256 the script pins", async () => {
+    const ci = await readFile(path.resolve(__dirname, "../../../.github/workflows/ci.yml"), "utf8");
+    expect(ci).toContain(`key: pyodide-tarball-${TARBALL_SHA256}`);
+    expect(ci).toContain("path: apps/web/.cache/pyodide");
   });
 
   it("accepts a file whose SHA-256 matches and refuses one that doesn't", async () => {
@@ -182,6 +189,34 @@ describe("preparePyodide on a fake release", () => {
     expect(await readFile(path.join(outDir, "scipy.whl"), "utf8")).toBe("scipy");
   });
 
+  it("checks a tarball you name even when nothing needs it, naming a bad path plainly", async () => {
+    const release = await fakeRelease("named");
+    const outDir = path.join(dir, "out-named");
+    const opts = { outDir, cacheDir: dir, coreFiles: release.coreFiles, tarballSha256: release.tarballSha256, log: () => {}, fetchImpl: noFetch };
+    expect(await preparePyodide({ ...opts, tarball: release.tarball })).toBe("prepared");
+    const missing = path.join(dir, "no-such.tar.bz2");
+    await expect(preparePyodide({ ...opts, tarball: missing })).rejects.toThrow(`Couldn't read ${missing}: it (or a folder above it) doesn't exist`);
+    await expect(preparePyodide({ ...opts, tarball: dir })).rejects.toThrow(`Couldn't read ${dir}: it is a folder, not a file`);
+    const wrong = path.join(dir, "wrong.tar.bz2");
+    await writeFile(wrong, "not it");
+    await expect(preparePyodide({ ...opts, tarball: wrong })).rejects.toThrow(/wrong\.tar\.bz2: SHA-256 is .*refusing it/);
+  });
+
+  it("removes files and folders that aren't part of the release (they would be served publicly)", async () => {
+    const release = await fakeRelease("extras");
+    const outDir = path.join(dir, "out-extras");
+    const logs: string[] = [];
+    const opts = { outDir, cacheDir: dir, coreFiles: release.coreFiles, tarballSha256: release.tarballSha256, log: (m: string) => logs.push(m), fetchImpl: noFetch };
+    await preparePyodide({ ...opts, tarball: release.tarball });
+    await writeFile(path.join(outDir, "notes.txt"), "secret");
+    await mkdir(path.join(outDir, "old"));
+    await writeFile(path.join(outDir, "old", "pandas.whl"), "x");
+    expect(await preparePyodide(opts)).toBe("already prepared");
+    expect((await readdir(outDir)).sort()).toEqual(["pyodide-lock.json", "pyodide.mjs", "pytest.whl", "scipy.whl", "sk-tests.zip", "sk.whl"]);
+    expect(logs).toContain("pyodide: removed notes.txt, which isn't part of the pinned release");
+    expect(logs).toContain("pyodide: removed old, which isn't part of the pinned release");
+  });
+
   it("(a) refuses a package whose bytes don't match the lock file, and leaves outDir untouched", async () => {
     const release = await fakeRelease("bad-package", { "scipy.whl": "tampered scipy" });
     const outDir = path.join(dir, "out-bad-package");
@@ -198,5 +233,15 @@ describe("preparePyodide on a fake release", () => {
       preparePyodide({ outDir, cacheDir: dir, tarball: release.tarball, coreFiles: release.coreFiles, tarballSha256: release.tarballSha256, log: () => {}, fetchImpl: noFetch })
     ).rejects.toThrow(/pyodide\.mjs: SHA-256 is .*refusing it/);
     expect(existsSync(outDir)).toBe(false);
+  });
+});
+
+describe("explain", () => {
+  it("turns Node's error codes into plain words that name the path", () => {
+    const err = (code: string) => Object.assign(new Error(`${code}: raw`), { code });
+    expect(explain("write", "/a/b", err("EACCES")).message).toBe("Couldn't write /a/b: permission denied");
+    expect(explain("write", "/a/b", err("ENOSPC")).message).toBe("Couldn't write /a/b: the disk is full");
+    expect(explain("read", "/a/b", err("ENOTDIR")).message).toBe("Couldn't read /a/b: a part of the path is a file, not a folder");
+    expect(explain("read", "/a/b", err("EOTHER")).message).toBe("Couldn't read /a/b: EOTHER: raw");
   });
 });
