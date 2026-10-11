@@ -49,16 +49,17 @@ export interface PlainError {
  * "sklearn/utils/stats.py". Cases, from real runs (see runReport.test.ts):
  *   - a SyntaxError / IndentationError in the student's file (pytest reports it as an ImportError while
  *     loading scikit-learn's conftest);
+ *   - a name scikit-learn imports from the student's file that the file no longer defines;
  *   - another error while importing the file (e.g. a NameError at the top level);
  *   - a test id the task names that doesn't exist: pytest then runs nothing at all.
  */
-export function explainRunError(error: string, file: string): PlainError {
+export function explainRunError(error: string, file: string, errorLine?: number): PlainError {
   const details = error.trim();
   const lines = details.split("\n");
   if (/^ERROR: not found: /m.test(details)) {
     return {
       headline:
-        "One of this task's tests couldn't be found, so pytest ran none of them. This is a problem with the task, not with your code.",
+        "One of this task's tests couldn't be found, so pytest ran none of them. This is probably a problem with the task, not with your code.",
       details,
     };
   }
@@ -66,15 +67,22 @@ export function explainRunError(error: string, file: string): PlainError {
     .map((l) => /File "([^"]+)", line (\d+)/.exec(l))
     .filter((m): m is RegExpExecArray => m !== null && m[1].endsWith(file))
     .pop();
-  const line = where ? Number(where[2]) : undefined;
+  // The runner imports the file by itself after a collection error to find the line (errorLine).
+  const line = where ? Number(where[2]) : errorLine;
   const last = [...lines].reverse().find((l) => /^\s*[A-Za-z_][\w.]*(Error|Exception|Warning)\b:?/.test(l))?.trim();
   const syntax = last && /^(SyntaxError|IndentationError|TabError): (.*)$/.exec(last);
   if (syntax) {
     const kind = syntax[1] === "SyntaxError" ? "a syntax error" : "an indentation error";
     return { headline: `Your file has ${kind}${line ? ` on line ${line}` : ""}: ${syntax[2]}`, line, details };
   }
+  const module = file.replace(/\.py$/, "").split("/").join(".");
+  const missingName = new RegExp(`cannot import name '(\\w+)' from '${module.replace(/\./g, "\\.")}'`).exec(details);
+  if (missingName) {
+    return { headline: `scikit-learn imports \`${missingName[1]}\` from your file, but your file no longer defines it.`, details };
+  }
   if (/while loading conftest|ERROR collecting/.test(details) && last) {
-    return { headline: `Your file couldn't be loaded${line ? ` (line ${line})` : ""}: ${last}`, line, details };
+    const at = line ? ` (line ${line})` : " (somewhere at the top level of your file)";
+    return { headline: `Your file couldn't be loaded${at}: ${last}`, line, details };
   }
   return { headline: `pytest couldn't run the tests${last ? `: ${last}` : "."}`, line, details };
 }
@@ -92,4 +100,15 @@ export function findSymbolLine(code: string, symbol: string): number | null {
     from = i + 1;
   }
   return null;
+}
+
+/** One sentence about a finished run, for screen readers (the page's aria-live region) and the e2e check. */
+export function runSummary(kind: "issue" | "check", result: RunResult, issueIds: string[], required: string[], file: string): string {
+  if (result.error) return explainRunError(result.error, file, result.errorLine).headline;
+  if (kind === "check") {
+    const v = judgeCheck(required, result);
+    return v.solved ? `Solved. All ${v.total} required tests pass.` : `${v.passed} of ${v.total} required tests pass.`;
+  }
+  const passed = issueIds.filter((id) => result.results.some((r) => r.id === id && r.outcome === "passed")).length;
+  return `${passed} of ${issueIds.length} of the issue's tests pass.`;
 }

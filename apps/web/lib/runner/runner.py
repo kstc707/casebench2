@@ -14,6 +14,7 @@ _cb_run(files_json, ids_json):
 It returns JSON:
   {"results": [{"id", "outcome": passed|failed|skipped|missing, "message"?}],
    "error": what stopped pytest from running the tests (e.g. a SyntaxError), else null,
+   "errorLine"?: the line of the written source file that broke, when pytest couldn't collect the tests,
    "durationMs": int}
 
 Only the standard library is imported at the top, so the file-handling and message helpers can be
@@ -199,6 +200,30 @@ def _cb_offline_data(names):
             os.environ["SKLEARN_SKIP_NETWORK_TESTS"] = env_before
 
 
+def _cb_error_line(files):
+    """After pytest couldn't even collect the tests: imports each written source file by itself to find
+    the line of its own file that broke (pytest's report often only names scikit-learn's conftest).
+    Returns that line number, or None."""
+    import importlib, traceback
+    for rel in files:
+        if "/tests/" in rel:
+            continue
+        _cb_forget_modules()
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                importlib.import_module(rel[:-3].replace("/", "."))
+        except SyntaxError as e:  # includes IndentationError
+            if (e.filename or "").endswith(rel) and e.lineno:
+                return e.lineno
+        except Exception as e:
+            frames = [f for f in traceback.extract_tb(e.__traceback__) if f.filename.endswith(rel)]
+            if frames:
+                return frames[-1].lineno
+        finally:
+            _cb_forget_modules()
+    return None
+
+
 def _cb_run(files_json, ids_json, options_json="{}"):
     import pytest
 
@@ -241,6 +266,8 @@ def _cb_run(files_json, ids_json, options_json="{}"):
                 ["-q", "-p", "no:cacheprovider", "--color=no", "-o", "addopts=", "-W", "ignore", *ids],
                 plugins=[Collector()],
             ))
+        collection_failed = code in (2, 3, 4) or (ids and not outcomes)
+        error_line = _cb_error_line(files) if collection_failed else None
     finally:
         _cb_restore()
 
@@ -250,10 +277,11 @@ def _cb_run(files_json, ids_json, options_json="{}"):
         if i in messages:
             r["message"] = messages[i]
         results.append(r)
-    error = None
-    if code in (2, 3, 4) or (ids and not outcomes):
-        error = _cb_collection_error(out.getvalue())
-    return json.dumps({"results": results, "error": error, "durationMs": int((time.time() - start) * 1000)})
+    error = _cb_collection_error(out.getvalue()) if collection_failed else None
+    reply = {"results": results, "error": error, "durationMs": int((time.time() - start) * 1000)}
+    if error_line is not None:
+        reply["errorLine"] = error_line
+    return json.dumps(reply)
 
 
 def _cb_installed(rel):

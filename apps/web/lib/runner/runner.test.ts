@@ -283,6 +283,7 @@ describe.skipIf(!process.env.RUN_PYODIDE_TESTS)("the Node runner on scikit-learn
     expect(r.error).toContain("SyntaxError");
     expect(r.error).toMatch(/stats\.py", line \d+/);
     expect(r.error).not.toContain("found no collectors");
+    expect(r.errorLine).toBe(192);
 
     const again = await runner.run({ ...fixture.before, ...fixture.fix }, fixture.issueIds);
     expect(outcomes(again)).toEqual(["passed"]);
@@ -306,6 +307,17 @@ describe.skipIf(!process.env.RUN_PYODIDE_TESTS)("the Node runner on scikit-learn
     expect(outcomes(withFace)).toEqual(["passed", "passed"]);
     const without = await runner.run(files, [perfect]);
     expect(outcomes(without)).toEqual(["skipped"]);
+  });
+
+  it("an error at the top level of the file: errorLine points at it (pytest's text doesn't)", { timeout: 120_000 }, async () => {
+    const lines = fixture.before[STATS].split("\n").length;
+    const r = await runner.run({ ...fixture.before, [STATS]: fixture.before[STATS] + "undefined_name_here\n" }, fixture.issueIds);
+    expect(r.error).toContain("NameError: name 'undefined_name_here' is not defined");
+    expect(r.error).not.toMatch(/stats\.py", line/);
+    expect(r.errorLine).toBe(lines);
+    const ok = await runner.run({ ...fixture.before, ...fixture.fix }, fixture.issueIds);
+    expect(ok.errorLine).toBeUndefined();
+    expect(outcomes(ok)).toEqual(["passed"]);
   });
 
   it("refuses a file outside sklearn/", { timeout: 60_000 }, async () => {

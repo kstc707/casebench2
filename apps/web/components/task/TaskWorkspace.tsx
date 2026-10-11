@@ -7,7 +7,8 @@ import { python } from "@codemirror/lang-python";
 import { markInProgress, markSolved, readDraft, readProgress, statusOf, writeDraft } from "../../lib/progress";
 import { useTestRunner, type LoadingStage } from "../../lib/runner/useTestRunner";
 import type { RunKind, RunResult, TestResult } from "../../lib/runner/types";
-import { explainRunError, findSymbolLine, judgeCheck } from "../../lib/sklearn/runReport";
+import { inlineCode, rstCodeSpans, type Segment } from "../../lib/sklearn/inlineCode";
+import { explainRunError, findSymbolLine, judgeCheck, runSummary } from "../../lib/sklearn/runReport";
 import type { TaskDetail } from "../../lib/tasks";
 
 const LOADING: Record<LoadingStage, string> = {
@@ -34,6 +35,9 @@ export function TaskWorkspace({ task }: { task: TaskDetail }) {
   const [runError, setRunError] = useState<string | null>(null);
   const [solved, setSolved] = useState(false);
   const [dark, setDark] = useState(false);
+  /** Read by screen readers after each run (an always-present aria-live region). */
+  const [announcement, setAnnouncement] = useState("");
+  const [saveProblem, setSaveProblem] = useState(false);
   const required = useMemo(() => [...task.failToPass, ...task.passToPass], [task]);
 
   // Restore the draft and the solved state (browser only).
@@ -47,7 +51,7 @@ export function TaskWorkspace({ task }: { task: TaskDetail }) {
   const onEdit = useCallback(
     (value: string) => {
       setCode(value);
-      writeDraft(task.slug, value === task.before ? null : value);
+      setSaveProblem(!writeDraft(task.slug, value === task.before ? null : value));
       if (value !== task.before) markInProgress(task.slug);
     },
     [task.slug, task.before]
@@ -56,7 +60,9 @@ export function TaskWorkspace({ task }: { task: TaskDetail }) {
   function reset() {
     if (!window.confirm(`Put back the original ${baseName(task.file)} from scikit-learn ${task.baseTag}? Your changes will be lost.`)) return;
     setCode(task.before);
-    writeDraft(task.slug, null);
+    setLastRun(null);
+    setAnnouncement("");
+    setSaveProblem(!writeDraft(task.slug, null));
   }
 
   /** Scrolls the editor to a line of the student's file and puts the cursor there. */
@@ -80,21 +86,36 @@ export function TaskWorkspace({ task }: { task: TaskDetail }) {
     try {
       const result = await runner.run({ [task.file]: code, [task.testFile]: task.tests }, ids, kind, { offlineData: task.offlineData });
       setLastRun({ kind, result });
+      setAnnouncement(runSummary(kind, result, task.failToPass, required, task.file));
       if (kind === "check" && judgeCheck(required, result).solved) {
-        markSolved(task.slug);
+        const saved = markSolved(task.slug);
+        setSaveProblem(statusOf(saved, task.slug) !== "solved" || statusOf(readProgress(), task.slug) !== "solved");
         setSolved(true);
       }
     } catch (err) {
-      setRunError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setRunError(message);
+      setAnnouncement(message);
     }
   }
 
   const busy = runner.state !== "ready";
   const result = lastRun?.result;
   const byId = useMemo(() => new Map((result?.results ?? []).map((r) => [r.id, r])), [result]);
-  const plainError = result?.error ? explainRunError(result.error, task.file) : null;
+  const plainError = result?.error ? explainRunError(result.error, task.file, result.errorLine) : null;
   const verdict = lastRun?.kind === "check" && result ? judgeCheck(required, result) : null;
   const changed = code !== task.before;
+  // The file can't change while its tests run (the run uses the text from when it started).
+  const editable = tab === "file" && runner.state !== "running";
+  // The editor's accessible name goes on its editable element (the wrapper div isn't announced).
+  const fileExtensions = useMemo(
+    () => [python(), EditorView.contentAttributes.of({ "aria-label": `Your code: ${task.file}` })],
+    [task.file]
+  );
+  const testExtensions = useMemo(
+    () => [python(), EditorView.contentAttributes.of({ "aria-label": `Tests, read-only: ${task.testFile}` })],
+    [task.testFile]
+  );
 
   return (
     <div className="workspace">
@@ -115,10 +136,14 @@ export function TaskWorkspace({ task }: { task: TaskDetail }) {
         <p>{task.about.teaches}</p>
 
         <h2 className="ws-h">The real issue</h2>
-        <p>{task.about.summary}</p>
+        <p>
+          <Segments segs={inlineCode(task.about.summary)} />
+        </p>
         {task.about.quotes.map((q) => (
           <blockquote key={q.text} className="quote">
-            <p>{q.text}</p>
+            <p data-testid="quote-text">
+              <Segments segs={rstCodeSpans(q.text)} />
+            </p>
             <footer className="muted">
               From the{" "}
               <a href={q.url} target="_blank" rel="noreferrer">
@@ -139,7 +164,7 @@ export function TaskWorkspace({ task }: { task: TaskDetail }) {
 
         <h2 className="ws-h">Where to look</h2>
         <p>
-          <code>{task.about.whereToLook.symbol}</code> in <code>{task.file}</code>. {task.about.whereToLook.hint}
+          <code>{task.about.whereToLook.symbol}</code> in <code>{task.file}</code>. <Segments segs={inlineCode(task.about.whereToLook.hint)} />
         </p>
         {symbolLine && (
           <button type="button" onClick={() => jumpTo(symbolLine)}>
@@ -238,13 +263,12 @@ export function TaskWorkspace({ task }: { task: TaskDetail }) {
             ref={tab === "file" ? editor : undefined}
             value={tab === "file" ? code : task.tests}
             onChange={tab === "file" ? onEdit : undefined}
-            extensions={[python()]}
-            editable={tab === "file"}
-            readOnly={tab !== "file"}
+            extensions={tab === "file" ? fileExtensions : testExtensions}
+            editable={editable}
+            readOnly={!editable}
             theme={dark ? "dark" : "light"}
             height="100%"
             style={{ height: "100%" }}
-            aria-label={tab === "file" ? `Your code: ${task.file}` : `Tests (read-only): ${task.testFile}`}
           />
         </div>
         <div className="ws-bar">
@@ -252,6 +276,14 @@ export function TaskWorkspace({ task }: { task: TaskDetail }) {
             {runner.state === "loading" && LOADING[runner.stage]}
             {runner.state === "running" && "Running the tests…"}
             {runner.state === "failed" && `Python couldn't start: ${runner.bootError}`}
+            {runner.state === "failed" && (
+              <>
+                {" "}
+                <button type="button" className="link" onClick={runner.restart}>
+                  Try again
+                </button>
+              </>
+            )}
             {runner.state === "ready" && !result && "Ready."}
             {runner.state === "ready" && result && `Last run took ${(result.durationMs / 1000).toFixed(1)} s.`}
           </span>
@@ -260,6 +292,14 @@ export function TaskWorkspace({ task }: { task: TaskDetail }) {
               {runError}
             </span>
           )}
+          {saveProblem && (
+            <span className="error small" data-testid="save-problem">
+              Couldn&rsquo;t save in this browser: your changes and progress will be lost when you leave.
+            </span>
+          )}
+          <span className="visually-hidden" aria-live="polite" data-testid="announcement">
+            {announcement}
+          </span>
           <span className="ws-buttons">
             <button type="button" onClick={() => void run("issue")} disabled={busy}>
               Run the issue&rsquo;s tests
@@ -274,14 +314,25 @@ export function TaskWorkspace({ task }: { task: TaskDetail }) {
   );
 }
 
+const OUTCOME_TEXT: Record<string, string> = { passed: "Passed", failed: "Failed", skipped: "Skipped", missing: "Didn't run", "not-run": "Not run yet" };
+
+function Segments({ segs }: { segs: Segment[] }) {
+  return (
+    <>
+      {segs.map((s, i) => (s.code ? <code key={i}>{s.text}</code> : <span key={i}>{s.text}</span>))}
+    </>
+  );
+}
+
 function TestRow({ id, r }: { id: string; r: TestResult | undefined }) {
   const outcome = r?.outcome;
   const icon = outcome === "passed" ? "✓" : outcome === "failed" ? "✗" : outcome === "skipped" ? "–" : "○";
   return (
     <li className={`test ${outcome ?? "not-run"}`} data-testid="test-row">
-      <span className="test-icon" aria-label={outcome ?? "not run yet"}>
+      <span className="test-icon" aria-hidden="true">
         {icon}
       </span>
+      <span className="visually-hidden">{OUTCOME_TEXT[outcome ?? "not-run"]}: </span>
       <span className="test-body">
         <code title={id}>{shortName(id)}</code>
         {r?.message && <pre className="pre">{r.message}</pre>}

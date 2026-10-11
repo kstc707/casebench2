@@ -29,7 +29,7 @@ export default async function TaskPage({ params }: { params: Promise<{ slug: str
           </>
         }
       />
-      <TaskWorkspace task={task} />
+      <TaskWorkspace key={task.slug} task={task} />
     </>
   );
 }

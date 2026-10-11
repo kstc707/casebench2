@@ -83,6 +83,14 @@ describe.each(sources.tasks.map((t) => t.slug))("%s about.json", (slug) => {
     for (const l of added) expect(testLines.has(l), l).toBe(true);
   });
 
+  it("shows the same test changes as tests.diff (the diff the checker verifies)", () => {
+    const changed = (diff: string) => diff.split("\n").filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---) /.test(l));
+    const shown = fenced([...sections(source)].find(([h]) => h.startsWith("The test changes in the fix"))?.[1] ?? "");
+    const real = readFileSync(path.join(root, slug, "tests.diff"), "utf8");
+    expect(changed(shown).length).toBeGreaterThan(0);
+    expect(changed(shown)).toEqual(changed(real));
+  });
+
   it("shows docstrings that really are in the student's before file", () => {
     const blocks = [...sections(source)].filter(([h]) => h.startsWith("Docstring of")).map(([, b]) => fenced(b));
     expect(blocks.length).toBeGreaterThan(0);

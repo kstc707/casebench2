@@ -23,6 +23,8 @@ export interface RunResult {
   results: TestResult[];
   /** What stopped pytest from running the tests at all (e.g. a SyntaxError), else null. */
   error: string | null;
+  /** When pytest couldn't collect the tests: the line of the student's file that broke, if found. */
+  errorLine?: number;
   durationMs: number;
 }
 
