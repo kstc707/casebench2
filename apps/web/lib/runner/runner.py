@@ -27,6 +27,7 @@ sys.dont_write_bytecode = True
 _CB_PACKAGE = "sklearn"
 _cb_site = sysconfig.get_paths()["purelib"]
 _cb_originals = {}  # path -> the installed bytes (None if the file didn't exist), kept until restored
+_cb_created_dirs = []  # folders a run created (outermost first), removed again on restore
 
 # A failure message shows at most this much, so one huge diff can't flood the page.
 _CB_MAX_MESSAGE_LINES = 60
@@ -34,14 +35,17 @@ _CB_MAX_MESSAGE_CHARS = 4000
 
 
 def _cb_check_path(rel):
-    """Only files inside the scikit-learn package may be written, by a plain relative path."""
+    """Only Python files inside the scikit-learn package may be written, by a plain relative path.
+    A correctness guard (a task can't clobber pytest or the stdlib by mistake), not a security boundary:
+    the student's own Python code can already read and write any file in the browser's Pyodide."""
     parts = rel.split("/")
-    if rel.startswith("/") or "\\" in rel or parts[0] != _CB_PACKAGE or any(p in ("", ".", "..") for p in parts):
-        raise ValueError(f"{rel!r} isn't a file inside {_CB_PACKAGE}/")
+    if (rel.startswith("/") or "\\" in rel or len(parts) < 2 or parts[0] != _CB_PACKAGE
+            or not rel.endswith(".py") or any(p in ("", ".", "..") for p in parts)):
+        raise ValueError(f"{rel!r} isn't a .py file inside {_CB_PACKAGE}/")
 
 
 def _cb_restore(site=None):
-    """Puts every overwritten file back as installed (and removes files that weren't there)."""
+    """Puts every overwritten file back as installed (and removes files and folders that weren't there)."""
     site = site or _cb_site
     for rel, data in list(_cb_originals.items()):
         full = os.path.join(site, rel)
@@ -52,6 +56,23 @@ def _cb_restore(site=None):
             with open(full, "wb") as f:
                 f.write(data)
         del _cb_originals[rel]
+    for d in reversed(_cb_created_dirs):  # innermost first; leave a folder something else wrote into
+        try:
+            os.rmdir(d)
+        except OSError:
+            pass
+    _cb_created_dirs.clear()
+
+
+def _cb_make_dirs(d):
+    """Like os.makedirs, remembering each folder it creates so restoring can remove it."""
+    missing = []
+    while not os.path.isdir(d):
+        missing.append(d)
+        d = os.path.dirname(d)
+    for m in reversed(missing):
+        os.mkdir(m)
+        _cb_created_dirs.append(m)
 
 
 def _cb_apply(files, site=None):
@@ -67,7 +88,7 @@ def _cb_apply(files, site=None):
                     _cb_originals[rel] = f.read()
             else:
                 _cb_originals[rel] = None
-        os.makedirs(os.path.dirname(full), exist_ok=True)
+        _cb_make_dirs(os.path.dirname(full))
         with open(full, "w", encoding="utf-8", newline="") as f:
             f.write(text)
 

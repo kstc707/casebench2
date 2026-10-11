@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -119,5 +120,83 @@ describe("tarballFromArgs", () => {
     expect(tarballFromArgs([], { PYODIDE_TARBALL: "/y/p.tar.bz2" })).toBe("/y/p.tar.bz2");
     expect(tarballFromArgs([], {})).toBeUndefined();
     expect(() => tarballFromArgs(["--tarball"], {})).toThrow(/needs a path/);
+  });
+});
+
+// End to end on a tiny fake release: a .tar.bz2 with the same layout as Pyodide's (pyodide/<file>),
+// made with the system tar, and pins worked out from its bytes.
+describe("preparePyodide on a fake release", () => {
+  let dir: string;
+  const noFetch = (() => {
+    throw new Error("fetch must not be called");
+  }) as unknown as typeof fetch;
+
+  const lock = (shaOf: Record<string, string>) =>
+    JSON.stringify({
+      packages: {
+        "scikit-learn": { file_name: "sk.whl", sha256: shaOf["sk.whl"], depends: ["scipy"] },
+        "scikit-learn-tests": { file_name: "sk-tests.zip", sha256: shaOf["sk-tests.zip"], depends: ["scikit-learn"] },
+        scipy: { file_name: "scipy.whl", sha256: shaOf["scipy.whl"], depends: [] },
+        pytest: { file_name: "pytest.whl", sha256: shaOf["pytest.whl"], depends: [] },
+        pandas: { file_name: "pandas.whl", sha256: shaOf["pandas.whl"], depends: [] },
+      },
+    });
+  const packageBytes = { "sk.whl": "sk", "sk-tests.zip": "tests", "scipy.whl": "scipy", "pytest.whl": "pytest", "pandas.whl": "pandas" };
+
+  /** Builds <name>.tar.bz2; `tamper` changes one file's bytes after the lock was written. Returns its path and pins. */
+  async function fakeRelease(name: string, tamper: Record<string, string> = {}) {
+    const root = path.join(dir, name);
+    await mkdir(path.join(root, "pyodide"), { recursive: true });
+    const lockText = lock(Object.fromEntries(Object.entries(packageBytes).map(([f, b]) => [f, sha(b)])));
+    const files: Record<string, string> = { ...packageBytes, "pyodide.mjs": "export {}", "pyodide-lock.json": lockText, ...tamper };
+    for (const [f, b] of Object.entries(files)) await writeFile(path.join(root, "pyodide", f), b);
+    const tarball = path.join(dir, `${name}.tar.bz2`);
+    execFileSync("tar", ["-cjf", tarball, "-C", root, "pyodide"]);
+    const coreFiles = { "pyodide.mjs": sha("export {}"), "pyodide-lock.json": sha(lockText) };
+    return { tarball, coreFiles, tarballSha256: createHash("sha256").update(await readFile(tarball)).digest("hex") };
+  }
+
+  beforeAll(async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), "prepare-pyodide-e2e-"));
+  });
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("copies the core files and only the needed packages; a second run touches nothing; a corrupted file is redone", async () => {
+    const release = await fakeRelease("good");
+    const outDir = path.join(dir, "out-good");
+    const cacheDir = path.join(dir, "empty-cache");
+    const opts = { outDir, cacheDir, coreFiles: release.coreFiles, tarballSha256: release.tarballSha256, log: () => {} };
+
+    expect(await preparePyodide({ ...opts, tarball: release.tarball, fetchImpl: noFetch })).toBe("prepared");
+    expect((await readdir(outDir)).sort()).toEqual(["pyodide-lock.json", "pyodide.mjs", "pytest.whl", "scipy.whl", "sk-tests.zip", "sk.whl"]);
+
+    // (b) no tarball given, an empty cache, and fetch throws: it must not need any of them.
+    expect(await preparePyodide({ ...opts, fetchImpl: noFetch })).toBe("already prepared");
+    expect(existsSync(cacheDir)).toBe(false);
+
+    // (c) one corrupted output file among several (so "some match" isn't mistaken for "all match").
+    await writeFile(path.join(outDir, "scipy.whl"), "corrupted");
+    expect(await preparePyodide({ ...opts, tarball: release.tarball, fetchImpl: noFetch })).toBe("prepared");
+    expect(await readFile(path.join(outDir, "scipy.whl"), "utf8")).toBe("scipy");
+  });
+
+  it("(a) refuses a package whose bytes don't match the lock file, and leaves outDir untouched", async () => {
+    const release = await fakeRelease("bad-package", { "scipy.whl": "tampered scipy" });
+    const outDir = path.join(dir, "out-bad-package");
+    await expect(
+      preparePyodide({ outDir, cacheDir: dir, tarball: release.tarball, coreFiles: release.coreFiles, tarballSha256: release.tarballSha256, log: () => {}, fetchImpl: noFetch })
+    ).rejects.toThrow(/scipy\.whl: SHA-256 is .*refusing it/);
+    expect(existsSync(outDir)).toBe(false);
+  });
+
+  it("refuses a core file that doesn't match its pin, and leaves outDir untouched", async () => {
+    const release = await fakeRelease("bad-core", { "pyodide.mjs": "export const evil = 1" });
+    const outDir = path.join(dir, "out-bad-core");
+    await expect(
+      preparePyodide({ outDir, cacheDir: dir, tarball: release.tarball, coreFiles: release.coreFiles, tarballSha256: release.tarballSha256, log: () => {}, fetchImpl: noFetch })
+    ).rejects.toThrow(/pyodide\.mjs: SHA-256 is .*refusing it/);
+    expect(existsSync(outDir)).toBe(false);
   });
 });

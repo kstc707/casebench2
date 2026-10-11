@@ -124,30 +124,30 @@ function extract(tarball, members, dir) {
 }
 
 /** The verified tarball's path: the one given, else the cached one, else a fresh download. */
-async function obtainTarball({ tarball, cacheDir, log, fetchImpl }) {
+async function obtainTarball({ tarball, cacheDir, log, fetchImpl, tarballSha256 }) {
   if (tarball) {
-    await assertSha256(tarball, TARBALL_SHA256);
+    await assertSha256(tarball, tarballSha256);
     log(`pyodide: using ${tarball} (SHA-256 matches)`);
     return tarball;
   }
   const cached = path.join(cacheDir, TARBALL_NAME);
-  if (await fileMatches(cached, TARBALL_SHA256)) {
+  if (await fileMatches(cached, tarballSha256)) {
     log(`pyodide: using the cached ${cached}`);
     return cached;
   }
   log(`pyodide: downloading ${TARBALL_URL} (about 337 MB, once)`);
-  await download(TARBALL_URL, cached, TARBALL_SHA256, fetchImpl);
+  await download(TARBALL_URL, cached, tarballSha256, fetchImpl);
   log(`pyodide: downloaded and checked ${cached}`);
   return cached;
 }
 
 /** Every file that should be in the output folder, with its SHA-256, or null if the lock file isn't there yet. */
-async function expectedFiles(dir) {
+async function expectedFiles(dir, coreFiles) {
   const lockFile = path.join(dir, "pyodide-lock.json");
-  if (!(await fileMatches(lockFile, CORE_FILES["pyodide-lock.json"]))) return null;
+  if (!(await fileMatches(lockFile, coreFiles["pyodide-lock.json"]))) return null;
   const lock = JSON.parse(await readFile(lockFile, "utf8"));
   return [
-    ...Object.entries(CORE_FILES).map(([file, sha256]) => ({ file, sha256 })),
+    ...Object.entries(coreFiles).map(([file, sha256]) => ({ file, sha256 })),
     ...packagesNeeded(lock).map(({ file, sha256 }) => ({ file, sha256 })),
   ];
 }
@@ -155,7 +155,9 @@ async function expectedFiles(dir) {
 /**
  * Makes outDir (public/pyodide/<version>) hold exactly-pinned Pyodide core files and packages.
  * Returns what it did: "already prepared" or "prepared".
- * @param {{ outDir?: string; cacheDir?: string; tarball?: string; log?: (msg: string) => void; fetchImpl?: typeof fetch }} [options]
+ * The pins (tarballSha256, coreFiles) default to the real ones; tests pass their own for a tiny fake release.
+ * @param {{ outDir?: string; cacheDir?: string; tarball?: string; log?: (msg: string) => void; fetchImpl?: typeof fetch;
+ *   tarballSha256?: string; coreFiles?: Record<string, string> }} [options]
  */
 export async function preparePyodide({
   outDir = path.join(appDir, "public/pyodide", PYODIDE_VERSION),
@@ -163,8 +165,11 @@ export async function preparePyodide({
   tarball = undefined,
   log = console.log,
   fetchImpl = fetch,
+  tarballSha256 = TARBALL_SHA256,
+  coreFiles = CORE_FILES,
 } = {}) {
-  const want = await expectedFiles(outDir);
+  if (!coreFiles["pyodide-lock.json"]) throw new Error("coreFiles must pin pyodide-lock.json");
+  const want = await expectedFiles(outDir, coreFiles);
   if (want) {
     const ok = await Promise.all(want.map((f) => fileMatches(path.join(outDir, f.file), f.sha256)));
     if (ok.every(Boolean)) {
@@ -173,13 +178,13 @@ export async function preparePyodide({
     }
   }
 
-  const source = await obtainTarball({ tarball, cacheDir, log, fetchImpl });
+  const source = await obtainTarball({ tarball, cacheDir, log, fetchImpl, tarballSha256 });
   const tmp = await mkdtemp(path.join(os.tmpdir(), "casebench2-pyodide-"));
   try {
     // First the core files (the lock file says which packages we need), then the packages.
     log("pyodide: extracting the core files (decompresses the whole tarball; can take a minute)");
-    await extract(source, Object.keys(CORE_FILES).map((f) => `pyodide/${f}`), tmp);
-    for (const [file, sha256] of Object.entries(CORE_FILES)) await assertSha256(path.join(tmp, "pyodide", file), sha256);
+    await extract(source, Object.keys(coreFiles).map((f) => `pyodide/${f}`), tmp);
+    for (const [file, sha256] of Object.entries(coreFiles)) await assertSha256(path.join(tmp, "pyodide", file), sha256);
     const lock = JSON.parse(await readFile(path.join(tmp, "pyodide", "pyodide-lock.json"), "utf8"));
     const packages = packagesNeeded(lock);
     log(`pyodide: extracting ${packages.length} packages`);
@@ -187,7 +192,7 @@ export async function preparePyodide({
     for (const p of packages) await assertSha256(path.join(tmp, "pyodide", p.file), p.sha256);
 
     await mkdir(outDir, { recursive: true });
-    const files = [...Object.keys(CORE_FILES), ...packages.map((p) => p.file)];
+    const files = [...Object.keys(coreFiles), ...packages.map((p) => p.file)];
     for (const f of files) await copyFile(path.join(tmp, "pyodide", f), path.join(outDir, f));
     log(`pyodide: ${files.length} files checked and copied to ${path.relative(process.cwd(), outDir)}`);
     return "prepared";

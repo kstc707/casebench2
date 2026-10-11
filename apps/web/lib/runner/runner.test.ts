@@ -22,21 +22,23 @@ ${snippet}`;
 }
 
 describe("runner.py: writing over the installed files and putting them back", () => {
-  it("restores the installed file, and removes a file that wasn't installed", () => {
+  it("restores the installed file, and removes a file and folders that weren't installed", () => {
     const out = py(`
 site = tempfile.mkdtemp()
 os.makedirs(os.path.join(site, "sklearn/utils"))
 stats = os.path.join(site, "sklearn/utils/stats.py")
 open(stats, "w").write("shipped\\n")
-r._cb_apply({"sklearn/utils/stats.py": "first edit\\n", "sklearn/utils/new.py": "x = 1\\n"}, site)
+r._cb_apply({"sklearn/utils/stats.py": "first edit\\n", "sklearn/new/deeper/new.py": "x = 1\\n"}, site)
+created = os.path.isfile(os.path.join(site, "sklearn/new/deeper/new.py"))
 during = open(stats).read()
 r._cb_apply({"sklearn/utils/stats.py": "second edit\\n"}, site)  # the original is kept from the first write
 r._cb_restore(site)
 print(json.dumps({"during": during, "after": open(stats).read(),
-                  "newExists": os.path.exists(os.path.join(site, "sklearn/utils/new.py")),
-                  "remembered": len(r._cb_originals)}))
+                  "created": created, "newFolderExists": os.path.exists(os.path.join(site, "sklearn/new")),
+                  "sklearnExists": os.path.isdir(os.path.join(site, "sklearn")),
+                  "remembered": len(r._cb_originals), "folders": len(r._cb_created_dirs)}))
 `);
-    expect(out).toEqual({ during: "first edit\n", after: "shipped\n", newExists: false, remembered: 0 });
+    expect(out).toEqual({ during: "first edit\n", after: "shipped\n", created: true, newFolderExists: false, sklearnExists: true, remembered: 0, folders: 0 });
   });
 
   it("keeps the student's bytes exactly (no newline translation)", () => {
@@ -53,7 +55,8 @@ print(json.dumps(open(os.path.join(site, "sklearn/a.py"), "rb").read().decode())
     const out = py(`
 site = tempfile.mkdtemp()
 os.makedirs(os.path.join(site, "sklearn"))
-bad = ["/etc/passwd", "../x.py", "sklearn/../pytest.py", "pytest/__init__.py", "sklearn//a.py", "sklearn\\\\a.py", "sklearn/./a.py"]
+bad = ["/etc/passwd", "../x.py", "sklearn/../pytest.py", "pytest/__init__.py", "sklearn//a.py", "sklearn\\\\a.py", "sklearn/./a.py",
+       "sklearn", "sklearn.py", "sklearn/data.csv", "sklearn/utils"]
 refused = []
 for p in bad:
     try:
@@ -62,8 +65,32 @@ for p in bad:
         refused.append(p)
 print(json.dumps({"refused": refused, "okWritten": os.path.exists(os.path.join(site, "sklearn/ok.py"))}))
 `) as { refused: string[]; okWritten: boolean };
-    expect(out.refused).toHaveLength(7);
+    expect(out.refused).toHaveLength(11);
     expect(out.okWritten).toBe(false);
+  });
+
+  it("puts the files back even when pytest itself fails mid-run", () => {
+    const out = py(`
+import types
+site = tempfile.mkdtemp()
+os.makedirs(os.path.join(site, "sklearn/utils"))
+stats = os.path.join(site, "sklearn/utils/stats.py")
+open(stats, "w").write("shipped\\n")
+r._cb_site = site
+seen = {}
+def main(args, plugins):
+    seen["during"] = open(stats).read()
+    raise RuntimeError("pytest blew up")
+sys.modules["pytest"] = types.SimpleNamespace(main=main)
+try:
+    r._cb_run(json.dumps({"sklearn/utils/stats.py": "edit\\n", "sklearn/extra/x.py": ""}), json.dumps(["sklearn/utils/tests/test_stats.py::t"]))
+    raised = None
+except RuntimeError as e:
+    raised = str(e)
+print(json.dumps({"raised": raised, "during": seen.get("during"), "after": open(stats).read(),
+                  "extra": os.path.exists(os.path.join(site, "sklearn/extra")), "remembered": len(r._cb_originals)}))
+`);
+    expect(out).toEqual({ raised: "pytest blew up", during: "edit\n", after: "shipped\n", extra: false, remembered: 0 });
   });
 
   it("forgets every sklearn module, and only those", () => {
@@ -199,7 +226,7 @@ describe.skipIf(!process.env.RUN_PYODIDE_TESTS)("the Node runner on scikit-learn
 
   it("refuses a file outside sklearn/", { timeout: 60_000 }, async () => {
     const r = await runner.run({ "pytest.py": "" }, fixture.issueIds);
-    expect(r.error).toMatch(/isn't a file inside sklearn\//);
+    expect(r.error).toMatch(/isn't a \.py file inside sklearn\//);
     expect(outcomes(r)).toEqual(["missing"]);
   });
 });
