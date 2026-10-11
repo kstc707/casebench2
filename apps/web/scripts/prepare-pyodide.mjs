@@ -7,7 +7,9 @@
 // 2. extracts only the core files and the packages scikit-learn, its tests and pytest need (worked out
 //    from pyodide-lock.json), checking each core file against its pin and each package against the
 //    SHA-256 the lock file lists;
-// 3. copies them to public/pyodide/314.0.7/ (gitignored).
+// 3. copies them to public/pyodide/314.0.7/ (gitignored);
+// 4. copies our test runner (scripts/runner-worker.mjs and lib/runner/runner.py) to public/pyodide/,
+//    every time, so edits to them reach the browser.
 //
 // A second run checks the files already in public/pyodide/314.0.7/ and, if they all match, touches
 // neither the network nor the tarball.
@@ -194,6 +196,14 @@ export async function preparePyodide({
   }
 }
 
+/** Copies the test runner (the module worker and the Python it loads) next to the versioned Pyodide folder. */
+export async function copyRunner(dir = path.join(appDir, "public/pyodide"), log = console.log) {
+  await mkdir(dir, { recursive: true });
+  await copyFile(path.join(appDir, "scripts/runner-worker.mjs"), path.join(dir, "runner-worker.mjs"));
+  await copyFile(path.join(appDir, "lib/runner/runner.py"), path.join(dir, "runner.py"));
+  log("pyodide: copied the test runner (runner-worker.mjs, runner.py)");
+}
+
 /** --tarball <path> or PYODIDE_TARBALL. */
 export function tarballFromArgs(argv, env) {
   const i = argv.indexOf("--tarball");
@@ -207,6 +217,7 @@ export function tarballFromArgs(argv, env) {
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   try {
     await preparePyodide({ tarball: tarballFromArgs(process.argv.slice(2), process.env) });
+    await copyRunner();
   } catch (err) {
     console.error(String(err instanceof Error ? err.message : err));
     process.exit(1);
