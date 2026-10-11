@@ -19,3 +19,11 @@
   trivially exact. (Librarian)
 - **Check excerpts against what matched, not only against the file.** Byte-correct excerpts showed a
   table's header instead of the matching row. (Librarian)
+
+### From the scikit-learn track (Oct 11, Casebench 2)
+- **Block the network with a `fetch`-replacing preload, not a dead `HTTPS_PROXY`:** this sandbox also sets
+  lowercase `https_proxy`, which wins, so a "no network" run really downloaded 337 MB.
+- **A hook no page uses yet can still be tested in a real browser:** bundle it with React via esbuild into
+  a scratch page, and wrap `window.Worker` to count starts and stops.
+- **When a second run says "nothing to do", check that the first run really did the work,** in a scratch
+  copy with empty output.
