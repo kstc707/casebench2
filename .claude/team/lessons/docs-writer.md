@@ -12,3 +12,7 @@
   `npx vitest run packages/team-memory` after writing docs. (Librarian)
 - **Measure the "before" baseline right before your change, in the same working tree.** Other uncommitted
   edits had already moved the numbers. (Librarian)
+
+### From the scikit-learn track (Oct 11, Casebench 2)
+- **Check the team lead's numbers too.** A brief said "about 15–19 s" with no source; quote measured runs.
+- **The journal can grow while you write:** re-read it (`git diff .claude`) before finishing.

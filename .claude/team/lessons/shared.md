@@ -37,3 +37,9 @@ turn out wrong.
   "solved" the task.
 - **A checker that only re-runs the ids in its own manifest can't catch a weakened manifest.** Recompute
   from the whole test file and compare.
+- **Every file that decides "solved" needs an anchor the author can't edit** (`before/` and `tests/` against
+  the shipped 1.8.0 package, `tests.diff` against the upstream diff in `source.md`).
+- **Check where a wrapper component puts ARIA props:** `aria-label` on `<CodeMirror>` landed on a plain div.
+  Inspect the accessibility tree, don't trust that the prop was accepted.
+- **Time "usable again", not just "stopped":** a 60 s timeout means about 76 s for the student, because
+  Python has to restart.
