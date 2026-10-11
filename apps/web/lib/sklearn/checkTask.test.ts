@@ -25,6 +25,21 @@ const fixDiff = [
   "",
 ].join("\n");
 
+const shippedTests = "def test_ok():\n    assert f() == 1\n";
+const tests = "def test_ok():\n    assert f() == 1\n\n\ndef test_bug():\n    assert g() == 2\n";
+const testsDiff = [
+  "--- a/sklearn/tests/test_x.py",
+  "+++ b/sklearn/tests/test_x.py",
+  "@@ -1,2 +1,6 @@",
+  " def test_ok():",
+  "     assert f() == 1",
+  "+",
+  "+",
+  "+def test_bug():",
+  "+    assert g() == 2",
+  "",
+].join("\n");
+
 const task: SklearnTask = {
   slug: "demo",
   pr: 1,
@@ -46,6 +61,9 @@ const good: TaskCheckInput = {
   before,
   solution,
   fixDiff,
+  shippedTests,
+  tests,
+  testsDiff,
   beforeRun: run({ "t::bug": "failed", "t::ok": "passed", "t::skip": "skipped" }),
   solutionRun: run({ "t::bug": "passed", "t::ok": "passed", "t::skip": "skipped" }),
 };
@@ -62,6 +80,12 @@ describe("checkTask", () => {
   it("fails when before + fix.diff isn't the solution, or the diff doesn't apply", () => {
     expect(checkTask({ ...good, solution: "a = 1\nb = 21\nc = 3\n" })).toContain("before/sklearn/x.py + fix.diff isn't solution/sklearn/x.py");
     expect(checkTask({ ...good, fixDiff: fixDiff.replace("-b = 2", "-b = 3") })[0]).toMatch(/^fix\.diff doesn't apply to before\/sklearn\/x\.py: the diff doesn't match line 2/);
+  });
+
+  it("fails when tests/ isn't the shipped test file + tests.diff (e.g. a weakened test)", () => {
+    const weakened = tests.replace("assert g() == 2", "assert g() is not None");
+    expect(checkTask({ ...good, tests: weakened })).toEqual(["tests/sklearn/tests/test_x.py isn't the 1.8.0 test file + tests.diff (the PR's test changes)"]);
+    expect(checkTask({ ...good, shippedTests: "something else\n" })[0]).toMatch(/^tests\.diff doesn't apply to the 1\.8\.0 sklearn\/tests\/test_x\.py/);
   });
 
   it("fails when a failToPass test passes on before (it no longer proves the bug)", () => {

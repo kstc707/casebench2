@@ -3,7 +3,8 @@
  * each task (rules in lib/sklearn/checkTask.ts):
  *
  *   - the `before` file is byte-identical to the file inside the scikit-learn 1.8.0 package;
- *   - `before` + fix.diff gives exactly the `solution` file;
+ *   - `before` + fix.diff gives exactly the `solution` file, and the 1.8.0 test file + tests.diff gives
+ *     exactly `tests/` (so a weakened test can't make a wrong fix look right);
  *   - the whole PR test file, run on `before` and on `solution`, re-classifies to exactly the recorded
  *     failToPass, passToPass and skipped lists, with no test failing on the solution and at least one
  *     failToPass test.
@@ -35,7 +36,18 @@ async function check(runner: Runner, dir: string, slug: string): Promise<{ probl
   const options = { offlineData: task.offlineData ?? [] };
   const beforeRun = await runner.run({ [task.file]: before, [task.testFile]: tests }, [task.testFile], options);
   const solutionRun = await runner.run({ [task.file]: solution, [task.testFile]: tests }, [task.testFile], options);
-  const problems = checkTask({ task, shipped: runner.installedFile(task.file), before, solution, fixDiff: read("fix.diff"), beforeRun, solutionRun });
+  const problems = checkTask({
+    task,
+    shipped: runner.installedFile(task.file),
+    before,
+    solution,
+    fixDiff: read("fix.diff"),
+    shippedTests: runner.installedFile(task.testFile),
+    tests,
+    testsDiff: read("tests.diff"),
+    beforeRun,
+    solutionRun,
+  });
   const count = (r: typeof beforeRun, o: string) => r.results.filter((t) => t.outcome === o).length;
   const line =
     `${slug} (#${task.pr}): before ${count(beforeRun, "failed")} failed / ${count(beforeRun, "passed")} passed (${(beforeRun.durationMs / 1000).toFixed(1)} s); ` +

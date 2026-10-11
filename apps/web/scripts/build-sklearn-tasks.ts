@@ -12,7 +12,7 @@
  *      one side only, or if the patch doesn't apply cleanly. Data a task's tests would download is provided
  *      offline when sources.json lists it (`offlineData`, see lib/runner/runner.py);
  *   5. writes content/scikit-learn/<slug>/{task.json, before/<path>, tests/<path>, solution/<path>,
- *      fix.diff}, and content/scikit-learn/LICENSE (scikit-learn's BSD-3 licence, from the base release).
+ *      fix.diff, tests.diff}, and content/scikit-learn/LICENSE (scikit-learn's BSD-3 licence, from the base release).
  *
  * Hand-written files (about.json, source.md) are never touched. The output is deterministic (sorted keys,
  * LF line endings, no timestamps), so running it twice changes nothing.
@@ -111,6 +111,9 @@ async function buildTask(runner: Runner, repo: string, sources: SklearnSources, 
   }
 
   const diff = fixDiff(file, base[file], patched[file]);
+  // The PR's change to the test file, on top of the 1.8.0 test file: lets the checker prove tests/ is
+  // exactly upstream's (a weakened test would make a wrong fix look right).
+  const testsDiff = fixDiff(testFile, base[testFile], patched[testFile]);
   const task: SklearnTask = {
     slug,
     pr,
@@ -126,11 +129,12 @@ async function buildTask(runner: Runner, repo: string, sources: SklearnSources, 
     offlineData,
   };
   const dir = path.join(contentDir, slug);
-  for (const generated of ["task.json", "before", "tests", "solution", "fix.diff"]) rmSync(path.join(dir, generated), { recursive: true, force: true });
+  for (const generated of ["task.json", "before", "tests", "solution", "fix.diff", "tests.diff"]) rmSync(path.join(dir, generated), { recursive: true, force: true });
   writeFile(path.join(dir, "before", file), base[file]);
   writeFile(path.join(dir, "tests", testFile), patched[testFile]);
   writeFile(path.join(dir, "solution", file), patched[file]);
   writeFile(path.join(dir, "fix.diff"), diff);
+  writeFile(path.join(dir, "tests.diff"), testsDiff);
   writeFile(path.join(dir, "task.json"), stableJson(task));
   console.log(
     `ok   ${slug} (#${pr}): ${failToPass.length} fail→pass, ${passToPass.length} pass→pass, fix +${task.fixSize.added}/-${task.fixSize.removed}` +

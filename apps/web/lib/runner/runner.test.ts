@@ -101,6 +101,50 @@ print(json.dumps(r._cb_expand_ids(["b.py::x", "a.py", "c.py", "c.py::gone"], out
     expect(out).toEqual(["b.py::x", "a.py::t1", "a.py::t2", "c.py", "c.py::gone"]);
   });
 
+  it("_cb_offline_data puts back face, pooch and SKLEARN_SKIP_NETWORK_TESTS, also when the body raises", () => {
+    const out = py(`
+import types
+scipy = types.ModuleType("scipy"); datasets = types.ModuleType("scipy.datasets")
+def real_face(gray=False): return "real"
+datasets.face = real_face; scipy.datasets = datasets
+sys.modules["scipy"] = scipy; sys.modules["scipy.datasets"] = datasets
+
+def state():
+    return {"env": os.environ.get("SKLEARN_SKIP_NETWORK_TESTS"), "pooch": "pooch" in sys.modules,
+            "face": "real" if datasets.face is real_face else ("synthetic" if datasets.face is r._cb_synthetic_face else "other")}
+
+report = {"start": state()}
+with r._cb_offline_data(["raccoon_face"]):
+    report["inside"] = state()
+report["after"] = state()
+try:
+    with r._cb_offline_data(["raccoon_face"]):
+        raise RuntimeError("test blew up")
+except RuntimeError:
+    pass
+report["afterRaise"] = state()
+
+# Values that were already there are kept, not removed.
+os.environ["SKLEARN_SKIP_NETWORK_TESTS"] = "1"
+real_pooch = types.ModuleType("pooch"); sys.modules["pooch"] = real_pooch
+with r._cb_offline_data(["raccoon_face"]):
+    report["insideWithExisting"] = state()
+report["afterExisting"] = {**state(), "samePooch": sys.modules.get("pooch") is real_pooch}
+with r._cb_offline_data([]):
+    report["noneRequested"] = state()
+print(json.dumps(report))
+`);
+    expect(out).toEqual({
+      start: { env: null, pooch: false, face: "real" },
+      inside: { env: "0", pooch: true, face: "synthetic" },
+      after: { env: null, pooch: false, face: "real" },
+      afterRaise: { env: null, pooch: false, face: "real" },
+      insideWithExisting: { env: "0", pooch: true, face: "synthetic" },
+      afterExisting: { env: "1", pooch: true, face: "real", samePooch: true },
+      noneRequested: { env: "1", pooch: true, face: "real" },
+    });
+  });
+
   it("refuses offline data it doesn't know, without running anything", () => {
     const out = py(`
 import types

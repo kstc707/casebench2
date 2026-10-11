@@ -13,7 +13,7 @@ const SLUG = "weighted-percentile-zero-weight";
 const tmp = mkdtempSync(path.join(os.tmpdir(), "check-tasks-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-function copyWith(name: string, edit?: (task: Record<string, string[]>) => void): string {
+function copyWith(name: string, edit?: (task: Record<string, string[]>) => void, editTests?: (text: string) => string): string {
   const dir = path.join(tmp, name);
   cpSync(path.join(content, SLUG), path.join(dir, SLUG), { recursive: true });
   const sources = JSON.parse(readFileSync(path.join(content, "sources.json"), "utf8"));
@@ -24,6 +24,13 @@ function copyWith(name: string, edit?: (task: Record<string, string[]>) => void)
     const task = JSON.parse(readFileSync(file, "utf8"));
     edit(task);
     writeFileSync(file, JSON.stringify(task));
+  }
+  if (editTests) {
+    const file = path.join(dir, SLUG, "tests/sklearn/utils/tests/test_stats.py");
+    const text = readFileSync(file, "utf8");
+    const edited = editTests(text);
+    if (edited === text) throw new Error("the test edit changed nothing");
+    writeFileSync(file, edited);
   }
   return dir;
 }
@@ -45,6 +52,12 @@ describe.skipIf(!process.env.RUN_PYODIDE_TESTS)("check-sklearn-tasks (the real s
     expect(r.out).toContain(`FAIL ${SLUG}`);
     expect(r.out).toContain("aren't failToPass now");
     expect(r.out).toContain("0 of 1 tasks OK");
+    expect(r.status).toBe(1);
+  });
+
+  it("fails when the test file is weakened (so a wrong fix can't look right)", { timeout: 240_000 }, () => {
+    const r = check(copyWith("weakened", undefined, (t) => t.replace("assert approx(score_without_zeros) == score_with_zeros", "assert score_with_zeros is not None")));
+    expect(r.out).toContain("isn't the 1.8.0 test file + tests.diff");
     expect(r.status).toBe(1);
   });
 });

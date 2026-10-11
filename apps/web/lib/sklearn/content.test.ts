@@ -23,7 +23,7 @@ describe("scikit-learn content", () => {
     expect(task.upstreamTitle).toContain(`(#${task.pr})`);
     expect(task.file).toMatch(/^sklearn\/.+\.py$/);
     expect(task.testFile).toMatch(/^sklearn\/(.+\/)?tests\/test_.+\.py$/);
-    for (const f of [`before/${task.file}`, `solution/${task.file}`, `tests/${task.testFile}`, "fix.diff"]) {
+    for (const f of [`before/${task.file}`, `solution/${task.file}`, `tests/${task.testFile}`, "fix.diff", "tests.diff"]) {
       expect(existsSync(path.join(dir, f)), f).toBe(true);
     }
     expect(task.failToPass.length).toBeGreaterThan(0);
