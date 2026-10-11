@@ -32,6 +32,9 @@ describe("scikit-learn content", () => {
     for (const id of all) expect(id.startsWith(`${task.testFile}::`), id).toBe(true);
     expect([...task.failToPass].sort()).toEqual(task.failToPass);
     expect([...task.passToPass].sort()).toEqual(task.passToPass);
+    expect([...task.skipped].sort()).toEqual(task.skipped);
+    for (const id of task.skipped) expect(all, `${id} is skipped, so it can't be required`).not.toContain(id);
+    expect(task.offlineData).toEqual(entry.offlineData ?? []);
     const diff = readFileSync(path.join(dir, "fix.diff"), "utf8");
     expect(diff.startsWith(`diff --git a/${task.file} b/${task.file}\n`)).toBe(true);
     expect(diffSize(diff)).toEqual(task.fixSize);

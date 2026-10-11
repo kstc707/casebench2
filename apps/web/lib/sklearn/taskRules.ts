@@ -2,7 +2,7 @@
  * The rules that turn a real scikit-learn fix into a task (used by scripts/build-sklearn-tasks.ts),
  * kept pure so they can be unit-tested on small fake outcomes.
  */
-import type { TestOutcome } from "../runner/types";
+import type { OfflineData, TestOutcome } from "../runner/types";
 
 /** content/scikit-learn/<slug>/task.json: generated, never edited by hand. */
 export interface SklearnTask {
@@ -24,13 +24,17 @@ export interface SklearnTask {
   failToPass: string[];
   /** Tests that pass both times and must keep passing. */
   passToPass: string[];
+  /** Tests skipped both times (e.g. they need pandas, which isn't loaded). Recorded so a check can see them. */
+  skipped: string[];
+  /** Data the tests download, provided offline by the runner (see lib/runner/runner.py). */
+  offlineData: OfflineData[];
 }
 
 /** content/scikit-learn/sources.json: the hand-written seed list the builder starts from. */
 export interface SklearnSources {
   project: { name: string; repo: string; license: string };
   base: { tag: string; commit: string };
-  tasks: Array<{ slug: string; pr: number; mergeCommit: string }>;
+  tasks: Array<{ slug: string; pr: number; mergeCommit: string; offlineData?: OfflineData[] }>;
 }
 
 export type Outcomes = Record<string, TestOutcome>;
@@ -38,24 +42,33 @@ export type Outcomes = Record<string, TestOutcome>;
 export interface Classified {
   failToPass: string[];
   passToPass: string[];
+  skipped: string[];
   /** Why this can't be a task; empty when it can. */
   refusals: string[];
 }
 
 /**
- * failToPass: failed before and passed after. passToPass: passed both times. Both sorted.
- * Refused when no test goes from fail to pass, or when any test fails (or goes missing) with the real
- * fix: then "every required test passes" could never be the rule for solving it. Skipped tests are left
- * out of both lists.
+ * failToPass: failed before and passed after. passToPass: passed both times. skipped: skipped both
+ * times. All sorted. Refused when:
+ * - no test goes from fail to pass;
+ * - any test fails (or goes missing) with the real fix: then "every required test passes" could never
+ *   be the rule for solving it;
+ * - any test is skipped on one side and not the other: a skip that depends on the code hides what the
+ *   test would say (and a test skipped both times is listed, so nobody mistakes it for checked).
  */
 export function classifyOutcomes(before: Outcomes, after: Outcomes): Classified {
   const failToPass: string[] = [];
   const passToPass: string[] = [];
+  const skipped: string[] = [];
   const brokenAfter: string[] = [];
-  for (const id of Object.keys(after).sort()) {
+  const skipChanged: string[] = [];
+  for (const id of [...new Set([...Object.keys(before), ...Object.keys(after)])].sort()) {
     const a = after[id];
     const b = before[id];
-    if (a === "failed" || a === "missing") brokenAfter.push(`${id} (${a})`);
+    if ((a === "skipped") !== (b === "skipped")) skipChanged.push(`${id} (${b ?? "not run"} → ${a ?? "not run"})`);
+    else if (a === "skipped") skipped.push(id);
+    else if (a === undefined) continue; // ran only before: the PR's test file is the same both times, so this can't happen
+    else if (a === "failed" || a === "missing") brokenAfter.push(`${id} (${a})`);
     else if (a === "passed" && b === "failed") failToPass.push(id);
     else if (a === "passed" && b === "passed") passToPass.push(id);
   }
@@ -65,7 +78,10 @@ export function classifyOutcomes(before: Outcomes, after: Outcomes): Classified 
   if (brokenAfter.length) {
     refusals.push(`${brokenAfter.length} test(s) don't pass with the real fix: ${brokenAfter.slice(0, 5).join(", ")}`);
   }
-  return { failToPass, passToPass, refusals };
+  if (skipChanged.length) {
+    refusals.push(`${skipChanged.length} test(s) are skipped on one side only: ${skipChanged.slice(0, 5).join(", ")}`);
+  }
+  return { failToPass, passToPass, skipped, refusals };
 }
 
 /** Counts the lines a unified diff adds and removes (not its "+++"/"---" headers). */

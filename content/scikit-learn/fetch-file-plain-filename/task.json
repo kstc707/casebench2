@@ -21,6 +21,7 @@
     "removed": 2
   },
   "mergeCommit": "aab0d04a858ed2d9391b130a764ad23818b5d0a4",
+  "offlineData": [],
   "passToPass": [
     "sklearn/datasets/tests/test_base.py::test_bunch_dir",
     "sklearn/datasets/tests/test_base.py::test_bunch_pickle_generated_with_0_16_and_read_with_0_17",
@@ -63,6 +64,14 @@
     "sklearn/datasets/tests/test_base.py::test_loads_dumps_bunch"
   ],
   "pr": 34815,
+  "skipped": [
+    "sklearn/datasets/tests/test_base.py::test_toy_dataset_frame_dtype[load_breast_cancer-float64-int]",
+    "sklearn/datasets/tests/test_base.py::test_toy_dataset_frame_dtype[load_diabetes-float64-float64]",
+    "sklearn/datasets/tests/test_base.py::test_toy_dataset_frame_dtype[load_digits-float64-int]",
+    "sklearn/datasets/tests/test_base.py::test_toy_dataset_frame_dtype[load_iris-float64-int]",
+    "sklearn/datasets/tests/test_base.py::test_toy_dataset_frame_dtype[load_linnerud-float64-float64]",
+    "sklearn/datasets/tests/test_base.py::test_toy_dataset_frame_dtype[load_wine-float64-int]"
+  ],
   "slug": "fetch-file-plain-filename",
   "testFile": "sklearn/datasets/tests/test_base.py",
   "upstreamTitle": "MNT Raise ValueError if  `local_filename` is not a plain filename in `sklearn.datasets.fetch_file` (#34815)"

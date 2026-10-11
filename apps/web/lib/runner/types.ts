@@ -26,6 +26,16 @@ export interface RunResult {
   durationMs: number;
 }
 
+/**
+ * Data some scikit-learn tests download, provided offline for the tasks that need it.
+ * "raccoon_face": a synthetic stand-in for scipy.datasets.face (see runner.py).
+ */
+export type OfflineData = "raccoon_face";
+
+export interface RunOptions {
+  offlineData?: OfflineData[];
+}
+
 /** Versions reported once Python has started and imported everything. */
 export interface RunnerVersions {
   python: string;

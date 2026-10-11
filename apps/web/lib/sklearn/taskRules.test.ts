@@ -5,12 +5,25 @@ describe("classifyOutcomes", () => {
   it("sorts tests into failToPass and passToPass, sorted, leaving skipped ones out", () => {
     const before = { "t.py::c": "failed", "t.py::a": "passed", "t.py::b": "failed", "t.py::s": "skipped", "t.py::z": "passed" } as const;
     const after = { "t.py::z": "passed", "t.py::b": "passed", "t.py::c": "passed", "t.py::a": "passed", "t.py::s": "skipped" } as const;
-    expect(classifyOutcomes(before, after)).toEqual({ failToPass: ["t.py::b", "t.py::c"], passToPass: ["t.py::a", "t.py::z"], refusals: [] });
+    expect(classifyOutcomes(before, after)).toEqual({
+      failToPass: ["t.py::b", "t.py::c"],
+      passToPass: ["t.py::a", "t.py::z"],
+      skipped: ["t.py::s"],
+      refusals: [],
+    });
   });
 
-  it("leaves out a test that only exists after the fix or was skipped before", () => {
-    const r = classifyOutcomes({ "t.py::a": "failed", "t.py::s": "skipped" }, { "t.py::a": "passed", "t.py::s": "passed", "t.py::new": "passed" });
-    expect(r).toEqual({ failToPass: ["t.py::a"], passToPass: [], refusals: [] });
+  it("leaves out a test that only exists after the fix", () => {
+    const r = classifyOutcomes({ "t.py::a": "failed" }, { "t.py::a": "passed", "t.py::new": "passed" });
+    expect(r).toEqual({ failToPass: ["t.py::a"], passToPass: [], skipped: [], refusals: [] });
+  });
+
+  it("refuses when a test is skipped on one side only", () => {
+    const r = classifyOutcomes(
+      { "t.py::a": "failed", "t.py::s": "skipped", "t.py::u": "passed" },
+      { "t.py::a": "passed", "t.py::s": "passed", "t.py::u": "skipped" }
+    );
+    expect(r.refusals).toEqual(["2 test(s) are skipped on one side only: t.py::s (skipped → passed), t.py::u (passed → skipped)"]);
   });
 
   it("refuses when no test goes from failing to passing", () => {

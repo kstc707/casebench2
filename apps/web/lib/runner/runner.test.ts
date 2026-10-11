@@ -101,6 +101,16 @@ print(json.dumps(r._cb_expand_ids(["b.py::x", "a.py", "c.py", "c.py::gone"], out
     expect(out).toEqual(["b.py::x", "a.py::t1", "a.py::t2", "c.py", "c.py::gone"]);
   });
 
+  it("refuses offline data it doesn't know, without running anything", () => {
+    const out = py(`
+import types
+sys.modules["pytest"] = types.SimpleNamespace(main=lambda *a, **k: (_ for _ in ()).throw(AssertionError("ran")))
+print(r._cb_run(json.dumps({}), json.dumps(["sklearn/tests/test_x.py::t"]), json.dumps({"offlineData": ["raccoon_face", "mnist"]})))
+`) as { error: string; results: { outcome: string }[] };
+    expect(out.error).toBe("unknown offline data: mnist");
+    expect(out.results.map((r) => r.outcome)).toEqual(["missing"]);
+  });
+
   it("forgets every sklearn module, and only those", () => {
     const out = py(`
 import types
@@ -238,6 +248,20 @@ describe.skipIf(!process.env.RUN_PYODIDE_TESTS)("the Node runner on scikit-learn
     await runner.run({ ...fixture.before, ...fixture.fix }, fixture.issueIds);
     expect(runner.installedFile(STATS)).toBe(fixture.before[STATS]);
     expect(() => runner.installedFile("pytest.py")).toThrow(/isn't a \.py file inside sklearn\//);
+  });
+
+  it("with offlineData raccoon_face, the face tests really run; without it they are skipped again", { timeout: 120_000 }, async () => {
+    const dir = path.resolve(__dirname, "../../../../content/scikit-learn/reconstruct-patches-full-size");
+    const t = JSON.parse(readFileSync(path.join(dir, "task.json"), "utf8")) as { file: string; testFile: string };
+    const files = {
+      [t.file]: readFileSync(path.join(dir, "solution", t.file), "utf8"),
+      [t.testFile]: readFileSync(path.join(dir, "tests", t.testFile), "utf8"),
+    };
+    const perfect = `${t.testFile}::test_reconstruct_patches_perfect`;
+    const withFace = await runner.run(files, [perfect, `${t.testFile}::test_connect_regions`], { offlineData: ["raccoon_face"] });
+    expect(outcomes(withFace)).toEqual(["passed", "passed"]);
+    const without = await runner.run(files, [perfect]);
+    expect(outcomes(without)).toEqual(["skipped"]);
   });
 
   it("refuses a file outside sklearn/", { timeout: 60_000 }, async () => {

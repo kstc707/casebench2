@@ -7,8 +7,10 @@
  *      real fix's diff to them with `patch --fuzz=0` (shifted lines are fine, guessed context is not);
  *   3. runs the whole PR test file on "before" (1.8.0 source + PR tests) and "after" (fixed source + PR
  *      tests) with the same Pyodide runner the browser uses (lib/runner);
- *   4. records failToPass and passToPass, refusing the task if no test goes from fail to pass, if any test
- *      fails with the fix, or if the patch doesn't apply cleanly;
+ *   4. records failToPass, passToPass and skipped, refusing the task if no test goes from fail to pass, if any test
+ *      fails with the fix, if a test is skipped on
+ *      one side only, or if the patch doesn't apply cleanly. Data a task's tests would download is provided
+ *      offline when sources.json lists it (`offlineData`, see lib/runner/runner.py);
  *   5. writes content/scikit-learn/<slug>/{task.json, before/<path>, tests/<path>, solution/<path>,
  *      fix.diff}, and content/scikit-learn/LICENSE (scikit-learn's BSD-3 licence, from the base release).
  *
@@ -23,6 +25,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import os from "node:os";
 import path from "node:path";
 import { startRunner, type Runner } from "../lib/runner/runner";
+import type { OfflineData } from "../lib/runner/types";
 import type { Outcomes } from "../lib/sklearn/taskRules";
 import { classifyOutcomes, diffSize, splitFiles, stableJson, type SklearnSources, type SklearnTask } from "../lib/sklearn/taskRules";
 
@@ -72,13 +75,19 @@ function fixDiff(file: string, before: string, after: string): string {
   }
 }
 
-async function outcomesOf(runner: Runner, files: Record<string, string>, testFile: string): Promise<{ outcomes: Outcomes; error: string | null; ms: number }> {
-  const r = await runner.run(files, [testFile]);
+async function outcomesOf(
+  runner: Runner,
+  files: Record<string, string>,
+  testFile: string,
+  offlineData: OfflineData[]
+): Promise<{ outcomes: Outcomes; error: string | null; ms: number }> {
+  const r = await runner.run(files, [testFile], { offlineData });
   return { outcomes: Object.fromEntries(r.results.map((t) => [t.id, t.outcome])), error: r.error, ms: r.durationMs };
 }
 
 async function buildTask(runner: Runner, repo: string, sources: SklearnSources, entry: SklearnSources["tasks"][number]): Promise<string[]> {
   const { slug, pr, mergeCommit } = entry;
+  const offlineData = entry.offlineData ?? [];
   const subject = git(repo, "log", "-1", "--format=%s", mergeCommit).trim();
   if (!subject.includes(`(#${pr})`)) return [`commit ${mergeCommit} is "${subject}", not PR #${pr}`];
 
@@ -92,11 +101,14 @@ async function buildTask(runner: Runner, repo: string, sources: SklearnSources, 
   if ("refusal" in applied) return [applied.refusal];
   const { patched } = applied;
 
-  const before = await outcomesOf(runner, { [file]: base[file], [testFile]: patched[testFile] }, testFile);
-  const after = await outcomesOf(runner, { [file]: patched[file], [testFile]: patched[testFile] }, testFile);
+  const before = await outcomesOf(runner, { [file]: base[file], [testFile]: patched[testFile] }, testFile, offlineData);
+  const after = await outcomesOf(runner, { [file]: patched[file], [testFile]: patched[testFile] }, testFile, offlineData);
   if (after.error) return [`pytest couldn't run the tests with the real fix:\n${after.error}`];
-  const { failToPass, passToPass, refusals } = classifyOutcomes(before.outcomes, after.outcomes);
-  if (refusals.length) return refusals;
+  const { failToPass, passToPass, skipped, refusals } = classifyOutcomes(before.outcomes, after.outcomes);
+  if (refusals.length) {
+    // A collection error on "before" (e.g. the old code can't be imported) explains the refusal best.
+    return before.error ? [...refusals, `pytest couldn't run the tests on "before":\n${before.error}`] : refusals;
+  }
 
   const diff = fixDiff(file, base[file], patched[file]);
   const task: SklearnTask = {
@@ -110,6 +122,8 @@ async function buildTask(runner: Runner, repo: string, sources: SklearnSources, 
     fixSize: diffSize(diff),
     failToPass,
     passToPass,
+    skipped,
+    offlineData,
   };
   const dir = path.join(contentDir, slug);
   for (const generated of ["task.json", "before", "tests", "solution", "fix.diff"]) rmSync(path.join(dir, generated), { recursive: true, force: true });
@@ -120,7 +134,7 @@ async function buildTask(runner: Runner, repo: string, sources: SklearnSources, 
   writeFile(path.join(dir, "task.json"), stableJson(task));
   console.log(
     `ok   ${slug} (#${pr}): ${failToPass.length} fail→pass, ${passToPass.length} pass→pass, fix +${task.fixSize.added}/-${task.fixSize.removed}` +
-      ` (before ${(before.ms / 1000).toFixed(1)} s, after ${(after.ms / 1000).toFixed(1)} s)`
+      `, ${skipped.length} skipped (before ${(before.ms / 1000).toFixed(1)} s, after ${(after.ms / 1000).toFixed(1)} s)`
   );
   return [];
 }

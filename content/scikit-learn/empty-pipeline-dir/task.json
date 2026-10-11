@@ -12,6 +12,7 @@
     "removed": 3
   },
   "mergeCommit": "361a8e1cc81418f3f19014752da4817b94f72657",
+  "offlineData": [],
   "passToPass": [
     "sklearn/tests/test_pipeline.py::test_classes_property",
     "sklearn/tests/test_pipeline.py::test_empty_pipeline",
@@ -155,6 +156,13 @@
     "sklearn/tests/test_pipeline.py::test_verbose[est9-\\\\[Pipeline\\\\].*\\\\(step 1 of 2\\\\) Processing transf.* total=.*\\\\n\\\\[Pipeline\\\\].*\\\\(step 2 of 2\\\\) Processing mult.* total=.*\\\\n$-fit_transform]"
   ],
   "pr": 33362,
+  "skipped": [
+    "sklearn/tests/test_pipeline.py::test_feature_union_feature_names_in_",
+    "sklearn/tests/test_pipeline.py::test_feature_union_passthrough_get_feature_names_out_false_errors",
+    "sklearn/tests/test_pipeline.py::test_feature_union_passthrough_get_feature_names_out_false_errors_overlap_over_5",
+    "sklearn/tests/test_pipeline.py::test_feature_union_set_output",
+    "sklearn/tests/test_pipeline.py::test_pipeline_set_output_integration"
+  ],
   "slug": "empty-pipeline-dir",
   "testFile": "sklearn/tests/test_pipeline.py",
   "upstreamTitle": "FIX make it possible to call `dir` on an empty pipeline (#33362)"

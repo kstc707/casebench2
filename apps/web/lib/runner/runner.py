@@ -8,7 +8,8 @@ _cb_run(files_json, ids_json):
   2. writes the given files (paths like "sklearn/utils/stats.py") over the installed scikit-learn files,
      keeping the originals;
   3. forgets every `sklearn` module already imported, so the edits take effect;
-  4. runs pytest on exactly the given test ids (a whole test file's path reports every test in it);
+  4. runs pytest on exactly the given test ids (a whole test file's path reports every test in it), with
+     any offline stand-in data the task needs (options {"offlineData": [...]});
   5. puts the originals back again.
 It returns JSON:
   {"results": [{"id", "outcome": passed|failed|skipped|missing, "message"?}],
@@ -154,11 +155,56 @@ def _cb_expand_ids(ids, outcomes):
     return out
 
 
-def _cb_run(files_json, ids_json):
+def _cb_synthetic_face(gray=False):
+    """Stands in for scipy.datasets.face (a 768x1024 photo of a raccoon that SciPy downloads): a fixed,
+    smooth image of the same shape and dtype, so tests that need "a real image" run offline."""
+    import numpy as np
+    y, x = np.mgrid[0:768, 0:1024]
+    img = 128 + 60 * np.sin(y / 37.0) + 60 * np.cos(x / 23.0)
+    img = np.clip(img + np.random.RandomState(0).randint(-10, 11, img.shape), 0, 255).astype(np.uint8)
+    return img if gray else np.dstack([img, img, img])
+
+
+@contextlib.contextmanager
+def _cb_offline_data(names):
+    """Lets scikit-learn's own dataset fixtures run with no network, only for the data a task names.
+    "raccoon_face": scikit-learn's conftest skips tests using `raccoon_face_fxt` unless
+    SKLEARN_SKIP_NETWORK_TESTS=0 and pooch (SciPy's downloader) is installed, then calls
+    scipy.datasets.face(). We set the variable, provide an empty `pooch` module and swap in a
+    synthetic face for the run, and undo all three afterwards."""
+    unknown = sorted(set(names) - {"raccoon_face"})
+    if unknown:
+        raise ValueError(f"unknown offline data: {', '.join(unknown)}")
+    if not names:
+        yield
+        return
+    import types
+    import scipy.datasets
+    env_before = os.environ.get("SKLEARN_SKIP_NETWORK_TESTS")
+    pooch_before = sys.modules.get("pooch")
+    face_before = scipy.datasets.face
+    os.environ["SKLEARN_SKIP_NETWORK_TESTS"] = "0"
+    if pooch_before is None:
+        sys.modules["pooch"] = types.ModuleType("pooch")
+    scipy.datasets.face = _cb_synthetic_face
+    try:
+        yield
+    finally:
+        scipy.datasets.face = face_before
+        if pooch_before is None:
+            sys.modules.pop("pooch", None)
+        if env_before is None:
+            os.environ.pop("SKLEARN_SKIP_NETWORK_TESTS", None)
+        else:
+            os.environ["SKLEARN_SKIP_NETWORK_TESTS"] = env_before
+
+
+def _cb_run(files_json, ids_json, options_json="{}"):
     import pytest
 
     files = json.loads(files_json)
     ids = json.loads(ids_json)
+    offline = json.loads(options_json).get("offlineData", [])
     start = time.time()
     outcomes = {}
     messages = {}
@@ -177,6 +223,9 @@ def _cb_run(files_json, ids_json):
     try:
         for rel in files:
             _cb_check_path(rel)
+        unknown = sorted(set(offline) - {"raccoon_face"})
+        if unknown:
+            raise ValueError(f"unknown offline data: {', '.join(unknown)}")
     except ValueError as e:
         return json.dumps({"results": [{"id": i, "outcome": "missing"} for i in ids], "error": str(e),
                            "durationMs": int((time.time() - start) * 1000)})
@@ -187,7 +236,7 @@ def _cb_run(files_json, ids_json):
         _cb_apply(files)
         _cb_forget_modules()
         os.chdir(_cb_site)
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+        with _cb_offline_data(offline), contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
             code = int(pytest.main(
                 ["-q", "-p", "no:cacheprovider", "--color=no", "-o", "addopts=", "-W", "ignore", *ids],
                 plugins=[Collector()],

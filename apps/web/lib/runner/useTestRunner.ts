@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PendingRuns } from "./pendingRuns";
-import { RUN_TIMEOUT_MS, type RunKind, type RunResult, type RunnerVersions } from "./types";
+import { RUN_TIMEOUT_MS, type RunKind, type RunOptions, type RunResult, type RunnerVersions } from "./types";
 
 /** "loading" includes downloading Python and scikit-learn (about 39 MB, once) and the first import. */
 export type RunnerState = "loading" | "ready" | "running" | "failed";
@@ -81,7 +81,7 @@ export function useTestRunner() {
   }, [start]);
 
   const run = useCallback(
-    (files: Record<string, string>, testIds: string[], kind: RunKind): Promise<RunResult> => {
+    (files: Record<string, string>, testIds: string[], kind: RunKind, options: RunOptions = {}): Promise<RunResult> => {
       const w = worker.current;
       const s = stateRef.current;
       if (!w || s !== "ready") {
@@ -96,7 +96,7 @@ export function useTestRunner() {
       const { id, promise } = runs.current.add(RUN_TIMEOUT_MS[kind], () => {
         if (!disposed.current) start(); // the worker is stuck: start a fresh Python
       });
-      w.postMessage({ id, files, testIds });
+      w.postMessage({ id, files, testIds, options });
       return promise;
     },
     [setState, start]

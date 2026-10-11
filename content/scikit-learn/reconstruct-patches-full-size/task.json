@@ -15,14 +15,35 @@
     "removed": 1
   },
   "mergeCommit": "d9a1b74f0d39ed655d7ddfe2a4303f40002ec1f8",
+  "offlineData": [
+    "raccoon_face"
+  ],
   "passToPass": [
+    "sklearn/feature_extraction/tests/test_image.py::test_connect_regions",
+    "sklearn/feature_extraction/tests/test_image.py::test_connect_regions_with_grid",
+    "sklearn/feature_extraction/tests/test_image.py::test_extract_patch_same_size_image",
+    "sklearn/feature_extraction/tests/test_image.py::test_extract_patches_all",
+    "sklearn/feature_extraction/tests/test_image.py::test_extract_patches_all_color",
+    "sklearn/feature_extraction/tests/test_image.py::test_extract_patches_all_rect",
+    "sklearn/feature_extraction/tests/test_image.py::test_extract_patches_less_than_max_patches",
+    "sklearn/feature_extraction/tests/test_image.py::test_extract_patches_max_patches",
+    "sklearn/feature_extraction/tests/test_image.py::test_extract_patches_square",
     "sklearn/feature_extraction/tests/test_image.py::test_extract_patches_strided",
     "sklearn/feature_extraction/tests/test_image.py::test_grid_to_graph",
     "sklearn/feature_extraction/tests/test_image.py::test_img_to_graph",
     "sklearn/feature_extraction/tests/test_image.py::test_img_to_graph_sparse",
+    "sklearn/feature_extraction/tests/test_image.py::test_patch_extractor_all_patches[42]",
+    "sklearn/feature_extraction/tests/test_image.py::test_patch_extractor_color[42]",
+    "sklearn/feature_extraction/tests/test_image.py::test_patch_extractor_fit[42]",
+    "sklearn/feature_extraction/tests/test_image.py::test_patch_extractor_max_patches[42]",
+    "sklearn/feature_extraction/tests/test_image.py::test_patch_extractor_max_patches_default[42]",
+    "sklearn/feature_extraction/tests/test_image.py::test_patch_extractor_wrong_input",
+    "sklearn/feature_extraction/tests/test_image.py::test_reconstruct_patches_perfect",
+    "sklearn/feature_extraction/tests/test_image.py::test_reconstruct_patches_perfect_color",
     "sklearn/feature_extraction/tests/test_image.py::test_width_patch"
   ],
   "pr": 33643,
+  "skipped": [],
   "slug": "reconstruct-patches-full-size",
   "testFile": "sklearn/feature_extraction/tests/test_image.py",
   "upstreamTitle": "FIX reconstruct_from_patches_2d when patch size equals image size (#33643)"

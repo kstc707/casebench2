@@ -6,7 +6,7 @@
 // Out: { type: "progress", stage: "python" | "packages" | "importing" } while loading,
 //      { type: "ready", versions } or { type: "boot-error", error } once,
 //      then { id, result } or { id, error } per run.
-// In:  { id, files, testIds }
+// In:  { id, files, testIds, options? }   (options: { offlineData?: ["raccoon_face"] })
 import { loadPyodide } from "./314.0.7/pyodide.mjs"; // keep in step with PYODIDE_VERSION (lib/runner/types.ts)
 
 const PACKAGES = ["scikit-learn", "scikit-learn-tests", "pytest"]; // RUNNER_PACKAGES in lib/runner/types.ts
@@ -32,12 +32,13 @@ ready.then(
 );
 
 self.onmessage = async (e) => {
-  const { id, files, testIds } = e.data;
+  const { id, files, testIds, options = {} } = e.data;
   try {
     const { py } = await ready;
     py.globals.set("_cb_files", JSON.stringify(files));
     py.globals.set("_cb_ids", JSON.stringify(testIds));
-    const json = await py.runPythonAsync("_cb_run(_cb_files, _cb_ids)");
+    py.globals.set("_cb_options", JSON.stringify(options));
+    const json = await py.runPythonAsync("_cb_run(_cb_files, _cb_ids, _cb_options)");
     self.postMessage({ id, result: JSON.parse(json) });
   } catch (err) {
     self.postMessage({ id, error: String(err) });
