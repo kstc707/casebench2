@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, symlinkSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -88,7 +88,10 @@ describe("SHA-256 pins", () => {
 
   it("CI caches the tarball under the same SHA-256 the script pins", async () => {
     const ci = await readFile(path.resolve(__dirname, "../../../.github/workflows/ci.yml"), "utf8");
-    expect(ci).toContain(`key: pyodide-tarball-${TARBALL_SHA256}`);
+    // restored before `pnpm pyodide` and saved right after it, under the same key
+    expect(ci.split(`key: pyodide-tarball-${TARBALL_SHA256}`)).toHaveLength(3);
+    expect(ci).toContain("actions/cache/restore@v4");
+    expect(ci).toContain("actions/cache/save@v4");
     expect(ci).toContain("path: apps/web/.cache/pyodide");
   });
 
@@ -215,6 +218,19 @@ describe("preparePyodide on a fake release", () => {
     expect((await readdir(outDir)).sort()).toEqual(["pyodide-lock.json", "pyodide.mjs", "pytest.whl", "scipy.whl", "sk-tests.zip", "sk.whl"]);
     expect(logs).toContain("pyodide: removed notes.txt, which isn't part of the pinned release");
     expect(logs).toContain("pyodide: removed old, which isn't part of the pinned release");
+  });
+
+  it("refuses an output folder that is a symbolic link, and deletes nothing behind it", async () => {
+    const release = await fakeRelease("symlink");
+    const real = path.join(dir, "real-target");
+    await mkdir(real);
+    await writeFile(path.join(real, "keep-me.txt"), "mine");
+    const link = path.join(dir, "out-link");
+    symlinkSync(real, link);
+    await expect(
+      preparePyodide({ outDir: link, cacheDir: dir, tarball: release.tarball, coreFiles: release.coreFiles, tarballSha256: release.tarballSha256, log: () => {}, fetchImpl: noFetch })
+    ).rejects.toThrow(/is a symbolic link; refusing/);
+    expect(await readdir(real)).toEqual(["keep-me.txt"]);
   });
 
   it("(a) refuses a package whose bytes don't match the lock file, and leaves outDir untouched", async () => {

@@ -22,7 +22,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
-import { copyFile, mkdir, mkdtemp, readdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { copyFile, lstat, mkdir, mkdtemp, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -147,11 +147,20 @@ function extract(tarball, members, dir) {
   });
 }
 
+/** Refuses an output folder that is a symbolic link: cleaning it would delete files somewhere else. */
+async function refuseSymlink(outDir) {
+  const info = await lstat(outDir).catch(() => null);
+  if (info?.isSymbolicLink()) {
+    throw new Error(`${outDir} is a symbolic link; refusing to write into it or remove files from it. Point outDir at a real folder.`);
+  }
+}
+
 /**
  * Removes anything in outDir that isn't one of the expected files: everything there is served publicly,
  * so a stray file must not linger.
  */
 async function removeExtras(outDir, expected, log) {
+  await refuseSymlink(outDir);
   const keep = new Set(expected);
   for (const name of (await readdir(outDir)).sort()) {
     if (keep.has(name)) continue;
@@ -203,6 +212,7 @@ export async function preparePyodide({
   coreFiles = CORE_FILES,
 } = {}) {
   if (!coreFiles["pyodide-lock.json"]) throw new Error("coreFiles must pin pyodide-lock.json");
+  await refuseSymlink(outDir);
   // A tarball you name is always checked, even when nothing needs it, so a wrong path or file is never
   // silently ignored.
   if (tarball) {

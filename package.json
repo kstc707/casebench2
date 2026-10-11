@@ -8,7 +8,7 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
-    "test:pyodide": "RUN_PYODIDE_TESTS=1 vitest run apps/web/lib/runner",
+    "test:pyodide": "RUN_PYODIDE_TESTS=1 vitest run apps/web/lib/runner apps/web/scripts",
     "team:ask": "tsx packages/team-memory/src/ask.ts"
   },
   "devDependencies": {

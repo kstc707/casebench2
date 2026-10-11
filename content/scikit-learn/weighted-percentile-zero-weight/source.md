@@ -2,6 +2,8 @@
 
 Everything quoted in `about.json` must appear word for word below. Fetched on 2026-10-11 from a git clone of https://github.com/scikit-learn/scikit-learn (through this sandbox's proxy). Docstrings are shown as Python reads them (indentation removed, and a backslash at a line end joins the lines).
 
+Made on 2026-10-11 by `python3 -I apps/web/scripts/make-sklearn-sources.py <scikit-learn clone> content/scikit-learn 2026-10-11` (clone at `102e5daf66759cf896beeee229d1bf7c80ab2ba4`).
+
 ## What could not be fetched
 
 - The pull request page (https://github.com/scikit-learn/scikit-learn/pull/33127), its description, review comments and any linked issue: github.com pages and api.github.com answer 403 in this sandbox, so none of that text is here or quoted.

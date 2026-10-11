@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -21,6 +22,37 @@ const REPO = "https://github.com/scikit-learn/scikit-learn/";
 // whitespace collapsed; every word and character must still be there, in order.
 const squash = (s: string) => s.replace(/\s+/g, " ").trim();
 
+/** source.md split into its "## " sections: heading -> body. */
+function sections(md: string): Map<string, string> {
+  const out = new Map<string, string>();
+  let heading = "";
+  for (const line of md.split("\n")) {
+    if (line.startsWith("## ")) heading = line.slice(3);
+    else out.set(heading, (out.get(heading) ?? "") + line + "\n");
+  }
+  return out;
+}
+
+/** The text inside a section's first fenced code block. */
+const fenced = (body: string) => /```[a-z]*\n([\s\S]*?)\n```/.exec(body)?.[1] ?? "";
+
+/** Which source.md section a quote's `source` label must come from. */
+const SECTION_FOR: Record<string, string> = {
+  "commit message": "The merge commit message",
+  "changelog entry": "The changelog entry",
+  "the test the fix added": "The test changes in the fix",
+};
+
+/** Every docstring in a Python file, as Python's ast reads it (system Python; no packages needed). */
+function docstrings(file: string): string[] {
+  const script = `
+import ast, json, sys
+tree = ast.parse(open(sys.argv[1], encoding="utf-8").read())
+nodes = [tree] + [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+print(json.dumps([d for d in (ast.get_docstring(n) for n in nodes) if d]))`;
+  return JSON.parse(execFileSync("python3", ["-I", "-B", "-c", script, file], { encoding: "utf8" })) as string[];
+}
+
 describe.each(sources.tasks.map((t) => t.slug))("%s about.json", (slug) => {
   const about = JSON.parse(readFileSync(path.join(root, slug, "about.json"), "utf8")) as About;
   const source = readFileSync(path.join(root, slug, "source.md"), "utf8");
@@ -32,11 +64,34 @@ describe.each(sources.tasks.map((t) => t.slug))("%s about.json", (slug) => {
     expect(about.pr).toEqual({ number: task.pr, url: `${REPO}pull/${task.pr}` });
   });
 
-  it("quotes only text found word for word in source.md", () => {
+  it("quotes only text found word for word in the source.md section its label names", () => {
+    const parts = sections(source);
     for (const q of about.quotes) {
       expect(q.text.length).toBeGreaterThan(10);
-      expect(squash(source), q.text).toContain(squash(q.text));
+      const want = SECTION_FOR[q.source];
+      expect(want, `unknown quote source "${q.source}"`).toBeDefined();
+      const body = [...parts].filter(([h]) => h.startsWith(want)).map(([, b]) => b).join("\n");
+      expect(squash(body), `${q.text} (in "${want}")`).toContain(squash(q.text));
     }
+  });
+
+  it("shows test lines that really are in the task's test file", () => {
+    const diff = fenced([...sections(source)].find(([h]) => h.startsWith("The test changes in the fix"))?.[1] ?? "");
+    const added = diff.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).map((l) => l.slice(1));
+    expect(added.length).toBeGreaterThan(0);
+    const testLines = new Set(readFileSync(path.join(root, slug, "tests", task.testFile), "utf8").split("\n"));
+    for (const l of added) expect(testLines.has(l), l).toBe(true);
+  });
+
+  it("shows docstrings that really are in the student's before file", () => {
+    const blocks = [...sections(source)].filter(([h]) => h.startsWith("Docstring of")).map(([, b]) => fenced(b));
+    expect(blocks.length).toBeGreaterThan(0);
+    const real = docstrings(path.join(root, slug, "before", task.file));
+    for (const d of blocks) expect(real, d.slice(0, 60)).toContain(d);
+  });
+
+  it("records how and when it was made", () => {
+    expect(source).toMatch(/Made on \d{4}-\d{2}-\d{2} by `python3 -I apps\/web\/scripts\/make-sklearn-sources\.py /);
   });
 
   it("links only to github.com/scikit-learn/scikit-learn, and every link is in source.md", () => {

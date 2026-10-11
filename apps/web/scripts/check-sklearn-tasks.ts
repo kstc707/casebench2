@@ -1,10 +1,12 @@
 /**
- * Checks every scikit-learn task with the same Pyodide runner the browser uses (CI's "tasks" job):
+ * Checks every scikit-learn task with the same Pyodide runner the browser uses (CI's "tasks" job). For
+ * each task (rules in lib/sklearn/checkTask.ts):
  *
- *   - the task's `before` file is byte-identical to the file inside the scikit-learn 1.8.0 package;
- *   - on `before` (with the PR's test file), every failToPass test fails and every passToPass test passes,
- *     so the task can be solved and "solved" means the right thing;
- *   - with `solution` (the real fix), every required test passes.
+ *   - the `before` file is byte-identical to the file inside the scikit-learn 1.8.0 package;
+ *   - `before` + fix.diff gives exactly the `solution` file;
+ *   - the whole PR test file, run on `before` and on `solution`, re-classifies to exactly the recorded
+ *     failToPass, passToPass and skipped lists, with no test failing on the solution and at least one
+ *     failToPass test.
  *
  * Needs public/pyodide (`pnpm --filter @casebench2/web pyodide`). Usage:
  *   pnpm --filter @casebench2/web check-tasks [--content <dir>]     (default: content/scikit-learn)
@@ -13,7 +15,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { startRunner, type Runner } from "../lib/runner/runner";
-import type { RunResult } from "../lib/runner/types";
+import { checkTask } from "../lib/sklearn/checkTask";
 import type { SklearnSources, SklearnTask } from "../lib/sklearn/taskRules";
 
 function contentDir(): string {
@@ -24,34 +26,21 @@ function contentDir(): string {
   return path.resolve(v);
 }
 
-const outcomesOf = (r: RunResult) => new Map(r.results.map((t) => [t.id, t.outcome]));
-
-/** Problems with one task; empty when it passes every check. */
-async function checkTask(runner: Runner, dir: string, slug: string): Promise<{ problems: string[]; line: string }> {
-  const task = JSON.parse(readFileSync(path.join(dir, slug, "task.json"), "utf8")) as SklearnTask;
-  const before = readFileSync(path.join(dir, slug, "before", task.file), "utf8");
-  const solution = readFileSync(path.join(dir, slug, "solution", task.file), "utf8");
-  const tests = readFileSync(path.join(dir, slug, "tests", task.testFile), "utf8");
-  const required = [...task.failToPass, ...task.passToPass];
-  const problems: string[] = [];
-
-  if (before !== runner.installedFile(task.file)) problems.push(`before/${task.file} isn't the file shipped in scikit-learn ${task.base.tag}`);
-
-  const b = await runner.run({ [task.file]: before, [task.testFile]: tests }, required);
-  if (b.error) problems.push(`before: pytest couldn't run the tests:\n${b.error}`);
-  const bo = outcomesOf(b);
-  for (const id of task.failToPass) if (bo.get(id) !== "failed") problems.push(`before: expected ${id} to fail, got ${bo.get(id)}`);
-  for (const id of task.passToPass) if (bo.get(id) !== "passed") problems.push(`before: expected ${id} to pass, got ${bo.get(id)}`);
-
-  const s = await runner.run({ [task.file]: solution, [task.testFile]: tests }, required);
-  if (s.error) problems.push(`with the real fix: pytest couldn't run the tests:\n${s.error}`);
-  const notPassing = s.results.filter((r) => r.outcome !== "passed");
-  for (const r of notPassing) problems.push(`with the real fix: expected ${r.id} to pass, got ${r.outcome}`);
-
-  const failingBefore = b.results.filter((r) => r.outcome !== "passed").length;
+async function check(runner: Runner, dir: string, slug: string): Promise<{ problems: string[]; line: string }> {
+  const read = (f: string) => readFileSync(path.join(dir, slug, f), "utf8");
+  const task = JSON.parse(read("task.json")) as SklearnTask;
+  const before = read(`before/${task.file}`);
+  const solution = read(`solution/${task.file}`);
+  const tests = read(`tests/${task.testFile}`);
+  const options = { offlineData: task.offlineData ?? [] };
+  const beforeRun = await runner.run({ [task.file]: before, [task.testFile]: tests }, [task.testFile], options);
+  const solutionRun = await runner.run({ [task.file]: solution, [task.testFile]: tests }, [task.testFile], options);
+  const problems = checkTask({ task, shipped: runner.installedFile(task.file), before, solution, fixDiff: read("fix.diff"), beforeRun, solutionRun });
+  const count = (r: typeof beforeRun, o: string) => r.results.filter((t) => t.outcome === o).length;
   const line =
-    `${slug} (#${task.pr}): before ${failingBefore} of ${required.length} not passing (${(b.durationMs / 1000).toFixed(1)} s); ` +
-    `real fix ${required.length - notPassing.length}/${required.length} pass (${(s.durationMs / 1000).toFixed(1)} s)`;
+    `${slug} (#${task.pr}): before ${count(beforeRun, "failed")} failed / ${count(beforeRun, "passed")} passed (${(beforeRun.durationMs / 1000).toFixed(1)} s); ` +
+    `real fix ${count(solutionRun, "passed")} passed / ${count(solutionRun, "failed")} failed (${(solutionRun.durationMs / 1000).toFixed(1)} s); ` +
+    `${count(solutionRun, "skipped")} skipped`;
   return { problems, line };
 }
 
@@ -66,7 +55,7 @@ async function main() {
   for (const { slug } of sources.tasks) {
     let result: { problems: string[]; line: string };
     try {
-      result = await checkTask(runner, dir, slug);
+      result = await check(runner, dir, slug);
     } catch (err) {
       result = { problems: [err instanceof Error ? err.message : String(err)], line: slug };
     }

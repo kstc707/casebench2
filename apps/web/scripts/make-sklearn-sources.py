@@ -58,6 +58,8 @@ for t in sources["tasks"]:
     out = [f"# Sources: scikit-learn #{pr} ({slug})\n",
            f"Everything quoted in `about.json` must appear word for word below. Fetched on {date} from a git clone of "
            f"{REPO_URL} (through this sandbox's proxy). Docstrings are shown as Python reads them (indentation removed, and a backslash at a line end joins the lines).\n",
+           f"\nMade on {date} by `python3 -I apps/web/scripts/make-sklearn-sources.py <scikit-learn clone> content/scikit-learn {date}` "
+           f"(clone at `{git('rev-parse', 'HEAD').strip()}`).\n",
            "## What could not be fetched\n",
            f"- The pull request page ({REPO_URL}/pull/{pr}), its description, review comments and any linked issue: "
            "github.com pages and api.github.com answer 403 in this sandbox, so none of that text is here or quoted.\n",
