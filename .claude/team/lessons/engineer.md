@@ -35,3 +35,7 @@
   `AssertionError:`.
 - **In the browser, the first import of sklearn, scipy and pytest (7.7–8.4 s) costs more than downloading
   the packages.** Do it during "loading" so the student's first click is fast.
+- **Integrity checks need a test that feeds a bad file through the whole path,** and an "all files match"
+  check needs one bad file among several (with one file, `every` and `some` behave the same).
+- **Pull timer and pending-run bookkeeping out of React hooks into a plain class** so unmount, timeout and
+  late replies can be tested with fake timers.
