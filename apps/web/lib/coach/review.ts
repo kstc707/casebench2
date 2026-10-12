@@ -207,6 +207,8 @@ export interface CoachLogEntry {
   slug: string;
   model: string;
   request: ReviewRequest;
+  /** The rule passages the request included, so comments can show the rule they cite. */
+  rules: RulePassage[];
   outcome: ReviewOutcome;
   /** Per comment index: the student's rating. */
   ratings: Record<string, "up" | "down">;

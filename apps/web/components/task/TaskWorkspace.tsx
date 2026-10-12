@@ -10,6 +10,8 @@ import type { RunKind, RunResult, TestResult } from "../../lib/runner/types";
 import { inlineCode, rstCodeSpans, type Segment } from "../../lib/sklearn/inlineCode";
 import { explainRunError, findSymbolLine, judgeCheck, runSummary } from "../../lib/sklearn/runReport";
 import type { TaskDetail } from "../../lib/tasks";
+import type { Passage } from "@casebench2/team-memory/src/corpus";
+import { CoachPanel } from "../coach/CoachPanel";
 
 const LOADING: Record<LoadingStage, string> = {
   python: "Downloading Python and scikit-learn (about 39 MB, only once)…",
@@ -26,7 +28,7 @@ interface LastRun {
 }
 
 /** The task page's working area: the context on the left, the code and the two run buttons on the right. */
-export function TaskWorkspace({ task }: { task: TaskDetail }) {
+export function TaskWorkspace({ task, rulePassages }: { task: TaskDetail; rulePassages: Passage[] }) {
   const runner = useTestRunner();
   const editor = useRef<ReactCodeMirrorRef>(null);
   const [code, setCode] = useState(task.before);
@@ -231,6 +233,7 @@ export function TaskWorkspace({ task }: { task: TaskDetail }) {
               to see how they reviewed it.
             </p>
             <Diff text={task.fixDiff} />
+            <CoachPanel task={task} code={code} solved={solved} rulePassages={rulePassages} />
           </>
         )}
       </section>
