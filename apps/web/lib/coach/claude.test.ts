@@ -2,7 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { describe, expect, it } from "vitest";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { coachLogJson, emptyCoachState } from "./storage";
-import { buildReviewRequest, costUsd, describeViolation, FALLBACK_BETA, MODEL, redactKey, reviewContext, ReviewSchema, runReview, validateReview, type CoachLogEntry, type Review, type ReviewInput, type ReviewOutcome } from "./review";
+import { buildClaudeRequest as buildReviewRequest, CLAUDE_MODEL as MODEL, costUsd, FALLBACK_BETA, runClaudeReview as runReview } from "./claude";
+import { describeViolation, redactKey, reviewContext, ReviewSchema, validateReview, type CoachLogEntry, type Review, type ReviewInput, type ReviewOutcome } from "./review";
 
 const input: ReviewInput = {
   task: { slug: "demo", title: "Zero weights", pr: 33127, file: "sklearn/utils/stats.py", testFile: "sklearn/utils/tests/test_stats.py" },
@@ -242,13 +243,13 @@ describe("validateReview", () => {
 describe("the key never reaches the coach log", () => {
   const KEY = "sk-ant-api03-SECRET_key-123";
   const outcomes: ReviewOutcome[] = [
-    { ok: true, review, violations: [], model: MODEL, usage: { input_tokens: 1, output_tokens: 1 }, costUsd: 0, latencyMs: 1, fallbacks: "off", fallbackError: `bad beta for key ${KEY}` },
+    { ok: true, provider: "claude", review, violations: [], model: MODEL, usage: { input_tokens: 1, output_tokens: 1 }, costUsd: 0, latencyMs: 1, fallbacks: "off", fallbackError: `bad beta for key ${KEY}` },
     ...(["refusal", "cut-off", "invalid", "auth", "rate-limit", "bad-request", "connection", "api", "unknown"] as const).map(
-      (kind) => ({ ok: false as const, kind, message: `failed with x-api-key: ${KEY}`, latencyMs: 1, fallbackError: KEY })
+      (kind) => ({ ok: false as const, provider: "claude" as const, kind, message: `failed with x-api-key: ${KEY}`, latencyMs: 1, fallbackError: KEY })
     ),
   ];
   it.each(outcomes.map((o) => [o.ok ? "ok" : o.kind, o] as const))("%s", (_, outcome) => {
-    const entry: CoachLogEntry = { at: "t", slug: "s", model: MODEL, request: buildReviewRequest(input), rules: input.rules, outcome: redactKey(outcome, KEY), ratings: {}, selfCheck: {} };
+    const entry: CoachLogEntry = { at: "t", slug: "s", provider: "claude", model: MODEL, request: buildReviewRequest(input), rules: input.rules, outcome: redactKey(outcome, KEY), ratings: {}, selfCheck: {} };
     const json = coachLogJson("s", { ...emptyCoachState(), log: [entry] });
     expect(json).not.toContain(KEY);
     expect(json).toContain("sk-ant-…[redacted]");

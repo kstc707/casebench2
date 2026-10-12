@@ -1,37 +1,22 @@
 /**
- * The coach's optional AI review (stage 4), run in the browser with the student's own Anthropic API key.
- * One request reviews everything the student prepared: their diff against scikit-learn 1.8.0, the PR
- * text, the changelog fragment, their answers to the three questions, the automatic checks, and the
- * rule passages retrieval found (lib/coach/retrieval.ts). The answer comes back as structured JSON
- * (output_config.format with a JSON schema made from ReviewSchema by the SDK's zod helper).
+ * The coach's optional AI review (stage 4), shared by every provider. One request reviews everything
+ * the student prepared: their diff against scikit-learn 1.8.0, the PR text, the changelog fragment,
+ * their answers to the three questions, the automatic checks, and the rule passages retrieval found
+ * (lib/coach/retrieval.ts). The answer must match ReviewSchema (structured JSON); validateReview then
+ * checks it against what it was given.
  *
- * Why `messages.create` and not `messages.parse`: in the installed SDK (0.133.0), `parse` throws
- * "Failed to parse structured output" whenever the text isn't valid JSON for the schema, e.g. on a
- * refusal or an answer cut off at max_tokens, before stop_reason can be checked. So we create the
- * message, check stop_reason first, then validate the text with the same schema ourselves.
- *
- * Pure parts (the request, the outcome handling, the cost) are unit-tested with a mocked client
- * (review.test.ts). No test or CI job calls the real API.
+ * Each provider has an adapter for the call itself, its stop/finish reasons and its errors:
+ * lib/coach/gemini.ts (the default, Google AI Studio's free tier) and lib/coach/claude.ts.
+ * No test or CI job calls a real API.
  */
-import Anthropic from "@anthropic-ai/sdk";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 import type { CheckResult } from "./checks";
 import type { RulePassage } from "./retrieval";
 
-export const MODEL = "claude-opus-5-5";
+export type Provider = "gemini" | "claude";
+
+/** The longest answer we ask any provider for. */
 export const MAX_TOKENS = 16000;
-/**
- * USD per million tokens, by the model that actually answered (a refusal fallback may answer with
- * another model). Used for the cost estimate; a model not listed shows "price unknown".
- */
-export const PRICES_PER_MTOK: Record<string, { input: number; output: number }> = {
-  "claude-opus-5-5": { input: 4, output: 20 },
-  "claude-opus-4-8": { input: 5, output: 25 },
-};
-/** Server-side refusal fallbacks (beta). Dropped for the request if the API rejects it with a 400. */
-export const FALLBACK_BETA = "server-side-fallback-2026-07-01";
 
 export const ReviewSchema = z.object({
   verdict: z.enum(["ready", "needs work"]),
@@ -87,11 +72,11 @@ export function randomNonce(): string {
 }
 
 /**
- * The request without the output format (added by runReview, which picks the API namespace).
- * Each section is wrapped in a tag whose name ends with `-<nonce>`; any copy of the nonce in the
- * material is removed, so nothing the student types can produce the real closing tag.
+ * The review's instructions and material, shared by every provider. Each section is wrapped in a tag
+ * whose name ends with `-<nonce>`; any copy of the nonce in the material is removed, so nothing the
+ * student types can produce the real closing tag.
  */
-export function buildReviewRequest(input: ReviewInput, nonce: string = randomNonce()) {
+export function buildReviewContent(input: ReviewInput, nonce: string = randomNonce()): { system: string; text: string } {
   const clean = (t: string) => t.split(nonce).join("");
   const tag = (name: string, body: string, attrs = "") => `<${name}-${nonce}${attrs}>\n${clean(body)}\n</${name}-${nonce}>`;
   const checks = input.checks.map((c) => `- [${c.ok ? "ok" : "not ok"}] ${c.title}: ${c.detail}`).join("\n");
@@ -111,21 +96,17 @@ export function buildReviewRequest(input: ReviewInput, nonce: string = randomNon
     tag("answers", answers),
     tag("scikit_learn_rules", rules),
   ].join("\n\n");
-  return {
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user" as const, content: text }],
-    output_config: { effort: "medium" as const },
-  };
+  return { system: SYSTEM_PROMPT, text };
 }
-export type ReviewRequest = ReturnType<typeof buildReviewRequest>;
 
-/** The estimated cost in USD for the model that answered, or null when its price isn't known. */
-export function costUsd(model: string, usage: { input_tokens: number; output_tokens: number }): number | null {
-  const price = PRICES_PER_MTOK[model];
-  if (!price) return null;
-  return (usage.input_tokens * price.input + usage.output_tokens * price.output) / 1_000_000;
+/** The review in a model's text answer, validated against ReviewSchema; null if it isn't one. */
+export function reviewFromText(text: string): Review | null {
+  try {
+    const parsed = ReviewSchema.safeParse(JSON.parse(text));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
 }
 
 /** What the review may refer to: the rule ids sent, and each question's key point ids. */
@@ -197,6 +178,7 @@ export function describeViolation(v: ReviewViolation): string {
 export type ReviewOutcome =
   | {
       ok: true;
+      provider: Provider;
       review: Review;
       /** Ways the review broke its own rules (empty when none). */
       violations: ReviewViolation[];
@@ -204,56 +186,26 @@ export type ReviewOutcome =
       usage: { input_tokens: number; output_tokens: number };
       /** null when the answering model's price isn't known. */
       costUsd: number | null;
+      /** Gemini's free tier: no cost. */
+      freeTier?: boolean;
       latencyMs: number;
-      fallbacks: "on" | "off";
+      /** Claude only: whether the refusal-fallback beta was used. */
+      fallbacks?: "on" | "off";
       /** When fallbacks were dropped: the API's message for the first try. */
       fallbackError?: string;
     }
   | {
       ok: false;
+      provider: Provider;
       kind: "refusal" | "cut-off" | "invalid" | "auth" | "rate-limit" | "bad-request" | "connection" | "api" | "unknown";
       message: string;
       model?: string;
       costUsd?: number | null;
+      freeTier?: boolean;
       fallbackError?: string;
       latencyMs: number;
       usage?: { input_tokens: number; output_tokens: number };
     };
-
-/** The part of the SDK client the review uses (lets tests pass a fake). */
-export interface ReviewClient {
-  messages: { create(params: never): Promise<unknown> };
-  beta: { messages: { create(params: never): Promise<unknown> } };
-}
-
-interface MessageLike {
-  stop_reason: string | null;
-  model: string;
-  usage: { input_tokens: number; output_tokens: number };
-  content: Array<{ type: string; text?: string }>;
-}
-
-/** The review in a message's text blocks, validated against ReviewSchema; null if it isn't one. */
-export function reviewFromMessage(message: Pick<MessageLike, "content">): Review | null {
-  const text = message.content
-    .filter((b) => b.type === "text")
-    .map((b) => b.text ?? "")
-    .join("");
-  try {
-    const parsed = ReviewSchema.safeParse(JSON.parse(text));
-    return parsed.success ? parsed.data : null;
-  } catch {
-    return null;
-  }
-}
-
-/** A browser client for the student's key. The key is sent only to the Anthropic API. */
-export function browserClient(apiKey: string): Anthropic {
-  return new Anthropic({ apiKey, baseURL: "https://api.anthropic.com", dangerouslyAllowBrowser: true, maxRetries: 1 });
-}
-
-/** The shape of an Anthropic API key, checked before any request. */
-export const API_KEY_FORMAT = /^sk-ant-[\w-]+$/;
 
 /** Removes the key from every string in an outcome (error messages can echo request details). */
 export function redactKey<T>(value: T, key: string): T {
@@ -261,78 +213,15 @@ export function redactKey<T>(value: T, key: string): T {
   return JSON.parse(JSON.stringify(value).split(key).join("sk-ant-…[redacted]")) as T;
 }
 
-/**
- * Whether a 400 is about the fallback beta (then the request is retried without it). This reads the
- * error's message, a deliberate exception to "never string-match errors" (the reviewer's choice): the
- * API has no error type for "this beta isn't available here", and retrying any other 400 only repeats it.
- */
-function isFallbackRejection(err: InstanceType<typeof Anthropic.BadRequestError>): boolean {
-  return /fallback|beta/i.test(err.message);
-}
-
-/** Sends the review request and turns every outcome into something the page can say plainly. */
-export async function runReview(
-  client: ReviewClient,
-  request: ReviewRequest,
-  context: ReviewContext,
-  now: () => number = () => Date.now()
-): Promise<ReviewOutcome> {
-  const start = now();
-  const elapsed = () => Math.round(now() - start);
-  let fallbackError: string | undefined;
-  try {
-    let fallbacks: "on" | "off" = "on";
-    let response: MessageLike;
-    try {
-      response = (await client.beta.messages.create({
-        ...request,
-        output_config: { ...request.output_config, format: betaZodOutputFormat(ReviewSchema) },
-        betas: [FALLBACK_BETA],
-        fallbacks: "default",
-      } as never)) as MessageLike;
-    } catch (err) {
-      // The fallback beta isn't accepted with this request: send the same review without it. Any other
-      // 400 is reported as it is (retrying wouldn't help).
-      if (!(err instanceof Anthropic.BadRequestError) || !isFallbackRejection(err)) throw err;
-      fallbacks = "off";
-      fallbackError = err.message;
-      response = (await client.messages.create({
-        ...request,
-        output_config: { ...request.output_config, format: zodOutputFormat(ReviewSchema) },
-      } as never)) as MessageLike;
-    }
-    const usage = { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens };
-    const billed = { model: response.model, usage, costUsd: costUsd(response.model, usage), fallbackError };
-    if (response.stop_reason === "refusal") {
-      return { ok: false, kind: "refusal", message: "The model declined to review this request.", latencyMs: elapsed(), ...billed };
-    }
-    if (response.stop_reason === "max_tokens") {
-      return { ok: false, kind: "cut-off", message: "The review was cut off before it finished (it hit the length limit).", latencyMs: elapsed(), ...billed };
-    }
-    const review = reviewFromMessage(response);
-    if (review === null) {
-      return { ok: false, kind: "invalid", message: "The review came back in an unexpected shape, so it can't be shown.", latencyMs: elapsed(), ...billed };
-    }
-    return { ok: true, review, violations: validateReview(review, context), ...billed, latencyMs: elapsed(), fallbacks };
-  } catch (err) {
-    const latencyMs = elapsed();
-    // Most specific first: APIConnectionError and the others are all APIErrors.
-    const base = { ok: false as const, latencyMs, fallbackError };
-    if (err instanceof Anthropic.AuthenticationError) return { ...base, kind: "auth", message: "This key was rejected. Check it, or create a new one in the Anthropic Console." };
-    if (err instanceof Anthropic.RateLimitError) return { ...base, kind: "rate-limit", message: "Too many requests, or this key's limit was reached. Wait a minute and try again." };
-    if (err instanceof Anthropic.BadRequestError) return { ...base, kind: "bad-request", message: `The API refused the request: ${err.message}` };
-    if (err instanceof Anthropic.APIConnectionError) return { ...base, kind: "connection", message: "Couldn't reach api.anthropic.com. Check your connection and try again." };
-    if (err instanceof Anthropic.APIError) return { ...base, kind: "api", message: `The API returned an error${err.status ? ` (HTTP ${err.status})` : ""}. Try again later.` };
-    return { ...base, kind: "unknown", message: err instanceof Error ? err.message : String(err) };
-  }
-}
-
 /** One entry of the downloadable coach log: everything needed to evaluate the coach later. */
 export interface CoachLogEntry {
   at: string;
   slug: string;
+  /** Which service reviewed it, and the model that answered (or was asked). */
+  provider: Provider;
   model: string;
-  request: ReviewRequest;
+  /** The request as sent (the provider's own shape), without the key. */
+  request: unknown;
   /** The rule passages the request included, so comments can show the rule they cite. */
   rules: RulePassage[];
   outcome: ReviewOutcome;

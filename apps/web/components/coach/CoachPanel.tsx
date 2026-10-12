@@ -4,18 +4,8 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import type { Passage } from "@casebench2/team-memory/src/corpus";
 import { changelogChecks, codeChecks, fragmentPath, prBody, prChecks, PR_SECTIONS, unifiedDiff, type CheckResult, type PrForm } from "../../lib/coach/checks";
 import { indexRules, retrieveRules, REVIEW_QUERIES } from "../../lib/coach/retrieval";
-import {
-  API_KEY_FORMAT,
-  browserClient,
-  buildReviewRequest,
-  describeViolation,
-  MODEL,
-  redactKey,
-  reviewContext,
-  runReview,
-  type CoachLogEntry,
-  type ReviewOutcome,
-} from "../../lib/coach/review";
+import { buildClaudeRequest as buildReviewRequest, CLAUDE_KEY_FORMAT as API_KEY_FORMAT, CLAUDE_MODEL as MODEL, claudeClient as browserClient, runClaudeReview as runReview } from "../../lib/coach/claude";
+import { describeViolation, redactKey, reviewContext, type CoachLogEntry, type ReviewOutcome } from "../../lib/coach/review";
 import { coachLogJson, readApiKey, readCoachState, writeApiKey, writeCoachState, type CoachState } from "../../lib/coach/storage";
 import type { TaskDetail } from "../../lib/tasks";
 
@@ -301,6 +291,7 @@ function AiReview({
     onLog({
       at: new Date().toISOString(),
       slug: task.slug,
+      provider: "claude",
       model: outcome.model ?? MODEL,
       request,
       rules,
