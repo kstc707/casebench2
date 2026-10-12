@@ -8,6 +8,12 @@ Casebench 1's history lives in the `kstc707/casebench` repo (`.claude/team/decis
 
 ---
 
+### 2026-10-12 · One narrow exception to "never string-match error messages" · **Decided (team lead)**
+- **What:** the coach retries without refusal fallbacks only when a 400's message mentions fallback or beta.
+  The SDK has no typed error for "this beta isn't accepted". The exception is documented in the code, and
+  the first error is logged.
+- **Revisit:** after the owner's first real review shows what the API actually returns.
+
 ### 2026-10-11 · The team builds a first draft of the AI coach for the owner to use and react to · **Decided (owner)**
 - **What:** the team builds a draft coach (plan: `docs/plans/section-2-coach-draft.md`). The owner uses it,
   gives feedback, and owns measuring it through the coach log the draft records.
