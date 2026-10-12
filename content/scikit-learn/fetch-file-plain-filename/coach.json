@@ -1,0 +1,101 @@
+{
+  "changelog": {
+    "folder": "sklearn.datasets",
+    "type": "fix",
+    "mentions": [
+      "fetch_file"
+    ]
+  },
+  "questions": [
+    {
+      "id": "input",
+      "prompt": "Which values of local_filename were dangerous before the fix, and why?",
+      "points": [
+        {
+          "id": "path",
+          "text": "A path instead of a plain file name.",
+          "evidence": {
+            "file": "source.md",
+            "quote": "is a path instead of a plain filename."
+          }
+        },
+        {
+          "id": "example",
+          "text": "For example \"../escaped.jsonl\" or an absolute path.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "\"../escaped.jsonl\","
+          }
+        },
+        {
+          "id": "outside",
+          "text": "The file could be written outside the chosen folder.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "of silently writing outside of `folder`."
+          }
+        }
+      ]
+    },
+    {
+      "id": "why",
+      "prompt": "How does the new check tell a plain file name from a path?",
+      "points": [
+        {
+          "id": "name",
+          "text": "A plain file name equals its own Path(...).name.",
+          "evidence": {
+            "file": "fix.diff",
+            "quote": "Path(local_filename).name != local_filename"
+          }
+        },
+        {
+          "id": "special",
+          "text": "The empty string and \"..\" are refused explicitly.",
+          "evidence": {
+            "file": "fix.diff",
+            "quote": "local_filename in (\n+        \"\",\n+        \"..\",\n+    ):"
+          }
+        },
+        {
+          "id": "docs",
+          "text": "The docstring now says it must be a plain filename.",
+          "evidence": {
+            "file": "fix.diff",
+            "quote": "It must be a plain filename."
+          }
+        }
+      ]
+    },
+    {
+      "id": "test",
+      "prompt": "What do the new tests check besides the ValueError?",
+      "points": [
+        {
+          "id": "no-download",
+          "text": "Nothing is downloaded or written when the name is refused.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "The check happens before any download and nothing is written to disk."
+          }
+        },
+        {
+          "id": "mock",
+          "text": "The download function is mocked and must not be called.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "assert urlretrieve_mock.call_count == 0"
+          }
+        },
+        {
+          "id": "accepts",
+          "text": "Plain names that look odd, like \".hidden.jsonl\", are still accepted.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "\".hidden.jsonl\","
+          }
+        }
+      ]
+    }
+  ]
+}
