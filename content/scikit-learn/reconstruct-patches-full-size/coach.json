@@ -47,7 +47,8 @@
           "evidence": {
             "file": "before/sklearn/feature_extraction/image.py",
             "quote": "n_h = i_h - p_h + 1"
-          }
+          },
+          "inferred": true
         },
         {
           "id": "new-divisor",

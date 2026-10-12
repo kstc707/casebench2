@@ -649,3 +649,10 @@ button.link {
   padding-left: 10px;
   margin: 8px 0;
 }
+
+.violations {
+  border: 1px solid var(--warn);
+  border-radius: 6px;
+  padding: 0 10px;
+  margin: 8px 0;
+}

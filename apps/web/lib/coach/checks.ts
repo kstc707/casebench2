@@ -140,7 +140,31 @@ export function blockRange(code: string, symbol: string): [number, number] | nul
   return [start, end];
 }
 
-const COMMENTED_CODE = /^\s*#\s*(return\b|if\b.*:\s*$|for\b.*:\s*$|while\b.*:\s*$|def\s|class\s|import\s|from\s+\S+\s+import\s|print\(|[A-Za-z_][\w.[\]]*\s*[+\-*/]?=[^=])/;
+// An expression made of code tokens only: names, numbers, strings, brackets and operators. Two plain
+// words in a row ("weighted value") make it English, not code.
+const EXPR = String.raw`[\w.\[\]()'"+\-*/%<>=!,:]+(?:\s*(?:[+\-*/%<>]=?|==|!=|\bis\b|\bin\b|\bnot\b|\band\b|\bor\b|,)\s*[\w.\[\]()'"+\-*/%<>=!,:]+)*`;
+const CODE_LINE = [
+  String.raw`(?:if|elif|while)\s+${EXPR}\s*:`, // if next_index > max_idx:
+  String.raw`for\s+[\w, ]+\s+in\s+${EXPR}\s*:`, // for col_idx in zero_weight_cols:
+  String.raw`(?:else|try|finally)\s*:|except(?:\s+${EXPR})?\s*:`,
+  String.raw`return(?:\s+${EXPR})?`, // return result
+  String.raw`(?:def|class)\s+\w+\s*[(:].*`,
+  String.raw`import\s+[\w.]+(?:\s+as\s+\w+)?|from\s+[\w.]+\s+import\s+.+`,
+  String.raw`[\w.\[\]]+\s*(?:[+\-*/]?=)\s*${EXPR}`, // next_index = percentile_indices[col_idx]
+  String.raw`[\w.]+\(.*\)`, // print(next_index)
+];
+/**
+ * A comment whose whole text parses as one line of Python-looking code. English comments that start
+ * with a keyword ("# for zero weights, skip ahead:", "# if the next weight is 0, move on:") don't match,
+ * and neither does "# result = weighted value": its right-hand side is two plain words, which we read
+ * as English (a borderline call: it could be a typo'd expression, but flagging prose is worse).
+ */
+export const COMMENTED_CODE = new RegExp(String.raw`^\s*#\s*(?:${CODE_LINE.join("|")})\s*$`);
+
+/** Whether an added line looks like code that was commented out. */
+export function looksLikeCommentedCode(line: string): boolean {
+  return COMMENTED_CODE.test(line);
+}
 
 const lineList = (ns: number[]) => (ns.length > 8 ? `${ns.slice(0, 8).join(", ")}, …` : ns.join(", "));
 
@@ -179,7 +203,7 @@ export function codeChecks(input: CodeCheckInput): CheckResult[] {
   const trailing = added((t) => /[ \t]+$/.test(t));
   const tabs = added((t) => t.includes("\t"));
   const debug = added((t) => /^\s*(print\(|breakpoint\(\)|import pdb|pdb\.set_trace\()/.test(t));
-  const commented = added((t) => COMMENTED_CODE.test(t));
+  const commented = added(looksLikeCommentedCode);
   const symbolTop = input.symbol.split(".")[0];
 
   return [
@@ -235,7 +259,7 @@ export function codeChecks(input: CodeCheckInput): CheckResult[] {
       title: "No leftover debugging or commented-out code",
       detail:
         debug.length || commented.length
-          ? [debug.length ? `print/breakpoint on line ${lineList(debug)}` : "", commented.length ? `commented-out code on line ${lineList(commented)}` : ""].filter(Boolean).join("; ") + "."
+          ? [debug.length ? `print/breakpoint on line ${lineList(debug)}.` : "", commented.length ? `Line ${lineList(commented)} looks like commented-out code — is it?` : ""].filter(Boolean).join(" ")
           : "No print(), breakpoint() or commented-out code in the lines you added.",
       rule: RULES.guidelines,
     },
@@ -310,6 +334,10 @@ export function fragmentPath(folder: string, type: string, pr: number | string =
   return `doc/whats_new/upcoming_changes/${folder}/${pr}.${type}.rst`;
 }
 
+/** "By :user:`A`." or several authors: "By :user:`A`, :user:`B` and :user:`C`." */
+const USER = "(?::user:`[^`]+`)";
+export const BY_USERS = new RegExp(`By ${USER}(?:(?:, | and |, and )${USER})*\\.?$`);
+
 export function changelogChecks(text: string, mentions: string[]): CheckResult[] {
   const t = text.replace(/\s+$/, "");
   const lines = t.split("\n");
@@ -326,9 +354,9 @@ export function changelogChecks(text: string, mentions: string[]): CheckResult[]
     },
     {
       id: "fragment-user",
-      ok: /By :user:`[^`]+`\.?$/.test(t),
+      ok: BY_USERS.test(t),
       title: "Ends with By :user:`…`",
-      detail: /By :user:`[^`]+`\.?$/.test(t) ? "Credits you." : "End with By :user:`Your Name <your-github-handle>`.",
+      detail: BY_USERS.test(t) ? "Credits you." : "End with By :user:`Your Name <your-github-handle>`.",
       rule: RULES.byUser,
     },
     {

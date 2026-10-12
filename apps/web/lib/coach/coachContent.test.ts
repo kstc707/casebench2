@@ -42,6 +42,7 @@ describe.each(sources.tasks.map((t) => t.slug))("%s coach.json", (slug) => {
       for (const p of q.points) {
         const f = p.evidence.file;
         expect(allowed.has(f) || f.startsWith("contributing/"), `${q.id}.${p.id}: ${f}`).toBe(true);
+        expect(p.inferred === undefined || p.inferred === true, `${q.id}.${p.id}: inferred is true or absent`).toBe(true);
         const file = f.startsWith("contributing/") ? path.join(root, f) : path.join(root, slug, f);
         expect(squash(readFileSync(file, "utf8")), `${q.id}.${p.id}: "${p.evidence.quote}" in ${f}`).toContain(squash(p.evidence.quote));
       }

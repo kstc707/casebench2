@@ -4,7 +4,18 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import type { Passage } from "@casebench2/team-memory/src/corpus";
 import { changelogChecks, codeChecks, fragmentPath, prBody, prChecks, PR_SECTIONS, unifiedDiff, type CheckResult, type PrForm } from "../../lib/coach/checks";
 import { indexRules, retrieveRules, REVIEW_QUERIES } from "../../lib/coach/retrieval";
-import { browserClient, buildReviewRequest, MODEL, runReview, type CoachLogEntry, type ReviewOutcome } from "../../lib/coach/review";
+import {
+  API_KEY_FORMAT,
+  browserClient,
+  buildReviewRequest,
+  describeViolation,
+  MODEL,
+  redactKey,
+  reviewContext,
+  runReview,
+  type CoachLogEntry,
+  type ReviewOutcome,
+} from "../../lib/coach/review";
 import { coachLogJson, readApiKey, readCoachState, writeApiKey, writeCoachState, type CoachState } from "../../lib/coach/storage";
 import type { TaskDetail } from "../../lib/tasks";
 
@@ -217,6 +228,7 @@ function Question({
                 onChange={(e) => onTicks(e.target.checked ? [...ticks, p.id] : ticks.filter((t) => t !== p.id))}
               />{" "}
               {p.text}
+              {p.inferred && <span className="muted"> (our inference from the code, not stated in the sources)</span>}
             </label>
           ))}
           <p className="small muted">
@@ -260,12 +272,21 @@ function AiReview({
   const latest = state.log.length ? state.log[state.log.length - 1] : null;
   const latestIndex = state.log.length - 1;
 
+  const [keyProblem, setKeyProblem] = useState<string | null>(null);
+
   async function review() {
+    const apiKey = key.trim();
+    if (!API_KEY_FORMAT.test(apiKey)) {
+      setKeyProblem("That doesn't look like an Anthropic API key (they start with sk-ant-). Nothing was sent.");
+      announce("That doesn't look like an Anthropic API key. Nothing was sent.");
+      return;
+    }
+    setKeyProblem(null);
     setBusy(true);
     announce("Reviewing…");
     const failing = checks.filter((c) => !c.ok).map((c) => c.title);
     const rules = retrieveRules(index, [...REVIEW_QUERIES, ...failing]);
-    const request = buildReviewRequest({
+    const input = {
       task: { slug: task.slug, title: task.title, pr: task.pr, file: task.file, testFile: task.testFile },
       diff,
       prBody: prBody(state.pr),
@@ -273,9 +294,20 @@ function AiReview({
       answers: task.coach.questions.map((q) => ({ questionId: q.id, prompt: q.prompt, answer: state.answers[q.id] ?? "", points: q.points.map((p) => ({ id: p.id, text: p.text })) })),
       checks,
       rules,
+    };
+    const request = buildReviewRequest(input);
+    // The key is removed from anything the API echoes back before it is shown or logged.
+    const outcome = redactKey(await runReview(browserClient(apiKey) as never, request, reviewContext(input)), apiKey);
+    onLog({
+      at: new Date().toISOString(),
+      slug: task.slug,
+      model: outcome.model ?? MODEL,
+      request,
+      rules,
+      outcome,
+      ratings: {},
+      selfCheck: Object.fromEntries(Object.entries(state.ticks).map(([q, ids]) => [q, [...ids]])),
     });
-    const outcome = await runReview(browserClient(key.trim()) as never, request);
-    onLog({ at: new Date().toISOString(), slug: task.slug, model: outcome.ok ? outcome.model : MODEL, request, rules, outcome, ratings: {} });
     announce(outcome.ok ? `Review ready: ${outcome.review.verdict}.` : outcome.message);
     setBusy(false);
   }
@@ -303,7 +335,7 @@ function AiReview({
         </p>
       </div>
       <Field label="Anthropic API key">
-        {(id) => <input id={id} type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-…" />}
+        {(id) => <input id={id} type="password" autoComplete="new-password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-…" />}
       </Field>
       <div className="row">
         <button type="button" onClick={() => setSavedKey(writeApiKey(key.trim()) && key.trim() !== "")} disabled={key.trim() === ""}>
@@ -326,6 +358,11 @@ function AiReview({
           {busy ? "Reviewing…" : "Review my pull request"}
         </button>
       </div>
+      {keyProblem && (
+        <p className="error small" role="alert" data-testid="key-problem">
+          {keyProblem}
+        </p>
+      )}
 
       {latest && <ReviewResult entry={latest} task={task} onRate={(comment, rating) => onRate(latestIndex, comment, rating)} />}
 
@@ -343,6 +380,12 @@ function AiReview({
   );
 }
 
+function usageLine(model: string, usage: { input_tokens: number; output_tokens: number }, cost: number | null, latencyMs: number): string {
+  const tokens = `${usage.input_tokens.toLocaleString("en")} input + ${usage.output_tokens.toLocaleString("en")} output tokens`;
+  const price = cost === null ? "price unknown for this model" : `about $${cost.toFixed(3)} (estimate)`;
+  return `${tokens} · ${price} · ${(latencyMs / 1000).toFixed(1)} s · ${model}`;
+}
+
 function ReviewResult({ entry, task, onRate }: { entry: CoachLogEntry; task: TaskDetail; onRate: (comment: string, rating: "up" | "down") => void }) {
   const o: ReviewOutcome = entry.outcome;
   if (!o.ok) {
@@ -351,7 +394,11 @@ function ReviewResult({ entry, task, onRate }: { entry: CoachLogEntry; task: Tas
         <p>
           <strong>{o.message}</strong>
         </p>
-        {o.usage && <p className="small">Tokens used: {o.usage.input_tokens} in, {o.usage.output_tokens} out.</p>}
+        {o.usage && (
+          <p className="small" data-testid="review-usage">
+            {usageLine(o.model ?? MODEL, o.usage, o.costUsd ?? null, o.latencyMs)}
+          </p>
+        )}
       </div>
     );
   }
@@ -369,6 +416,11 @@ function ReviewResult({ entry, task, onRate }: { entry: CoachLogEntry; task: Tas
             <span className="pill">{c.severity}</span> <span className="muted small">{c.where}{c.line ? `, line ${c.line}` : ""}</span>
             <p>{c.comment}</p>
             {c.rule && rules.has(c.rule) && <p className="rule muted small">Rule {c.rule}: {rules.get(c.rule)}</p>}
+            {c.rule && !rules.has(c.rule) && (
+              <p className="error small" data-testid="invented-rule">
+                Cites a rule that wasn&rsquo;t provided ({c.rule}): treat this comment with care.
+              </p>
+            )}
             <span className="rate" role="group" aria-label="Was this comment useful?">
               <button type="button" aria-pressed={entry.ratings[String(i)] === "up"} onClick={() => onRate(String(i), "up")}>
                 👍<span className="visually-hidden"> Useful</span>
@@ -397,9 +449,20 @@ function ReviewResult({ entry, task, onRate }: { entry: CoachLogEntry; task: Tas
           </div>
         );
       })}
+      {o.violations.length > 0 && (
+        <div className="small violations" data-testid="review-violations">
+          <p>
+            <strong>This review broke {o.violations.length === 1 ? "one of its own rules" : `${o.violations.length} of its own rules`}:</strong>
+          </p>
+          <ul>
+            {o.violations.map((v, i) => (
+              <li key={i}>{describeViolation(v)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <p className="small muted" data-testid="review-usage">
-        {o.usage.input_tokens.toLocaleString("en")} input + {o.usage.output_tokens.toLocaleString("en")} output tokens · about $
-        {o.costUsd.toFixed(3)} (estimate) · {(o.latencyMs / 1000).toFixed(1)} s · {o.model}
+        {usageLine(o.model, o.usage, o.costUsd, o.latencyMs)}
         {o.fallbacks === "off" ? " · refusal fallbacks unavailable for this request" : ""}
       </p>
     </div>

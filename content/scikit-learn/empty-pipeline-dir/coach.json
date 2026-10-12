@@ -55,7 +55,8 @@
           "evidence": {
             "file": "fix.diff",
             "quote": "raise AttributeError("
-          }
+          },
+          "inferred": true
         },
         {
           "id": "no-steps",

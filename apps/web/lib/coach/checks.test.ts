@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { applyUnifiedDiff } from "../sklearn/checkTask";
 import { getTask, listTasks } from "../tasks";
 import type { TaskCoach } from "./types";
-import { blockRange, changelogChecks, codeChecks, diffLines, EMPTY_PR, prBody, prChecks, RULES, unifiedDiff, fragmentPath } from "./checks";
+import { blockRange, looksLikeCommentedCode, changelogChecks, codeChecks, diffLines, EMPTY_PR, prBody, prChecks, RULES, unifiedDiff, fragmentPath } from "./checks";
 
 const root = path.resolve(__dirname, "../../../../content/scikit-learn");
 const squash = (s: string) => s.replace(/\s+/g, " ").trim();
@@ -125,5 +125,41 @@ describe("changelogChecks", () => {
 
   it("names the fragment file like the README says", () => {
     expect(fragmentPath("sklearn.utils", "fix")).toBe("doc/whats_new/upcoming_changes/sklearn.utils/<PR number>.fix.rst");
+  });
+});
+
+describe("looksLikeCommentedCode", () => {
+  it.each([
+    "# for zero weights, skip ahead:",
+    "# if the next weight is 0, move on:",
+    // Borderline, read as English: the right-hand side is two plain words.
+    "# result = weighted value",
+    "# return early when nothing is left",
+    "# Handle case where there are trailing 0 sample weight samples",
+    "# XXX: is this the most efficient way? memory-wise yes, cpu wise?",
+  ])("English comment, not flagged: %s", (line) => expect(looksLikeCommentedCode(line)).toBe(false));
+
+  it.each(["# print(next_index)", "#     next_index = percentile_indices[col_idx]", "# if next_index > max_idx:", "# for col_idx in zero_weight_cols:", "# return result", "# import pdb"])(
+    "code, flagged: %s",
+    (line) => expect(looksLikeCommentedCode(line)).toBe(true)
+  );
+
+  it("is worded as a question", () => {
+    const t = getTask("weighted-percentile-zero-weight")!;
+    const code = t.before.replace("if next_index >= max_idx:", "if next_index > max_idx:\n                    # next_index = 0");
+    const r = codeChecks({ file: t.file, before: t.before, code, symbol: t.about.whereToLook.symbol, fixSize: t.fixSize, solved: true }).find((c) => c.id === "style-debug")!;
+    expect(r.ok).toBe(false);
+    expect(r.detail).toMatch(/looks like commented-out code — is it\?$/);
+  });
+});
+
+describe("By :user: with several authors", () => {
+  it.each([
+    ["- Fixed x.\n  By :user:`A <a>` and :user:`B <b>`.", true],
+    ["- Fixed x.\n  By :user:`A <a>`, :user:`B <b>` and :user:`C <c>`.", true],
+    ["- Fixed x.\n  By :user:`A <a>`, :user:`B <b>`, and :user:`C <c>`.", true],
+    ["- Fixed x.\n  By A and B.", false],
+  ])("%s → %s", (text, ok) => {
+    expect(changelogChecks(text, ["x"]).find((c) => c.id === "fragment-user")!.ok).toBe(ok);
   });
 });

@@ -10,6 +10,11 @@ export interface RubricPoint {
   text: string;
   /** Where it comes from: a file in the task folder (source.md, fix.diff, tests.diff, before/…) or "contributing/…". */
   evidence: { file: string; quote: string };
+  /**
+   * True when the point is our reasoning from the evidence rather than something a source states
+   * (shown to the student as an inference).
+   */
+  inferred?: boolean;
 }
 
 export interface CoachQuestion {
