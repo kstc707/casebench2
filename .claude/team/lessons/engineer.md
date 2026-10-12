@@ -39,3 +39,9 @@
   check needs one bad file among several (with one file, `every` and `some` behave the same).
 - **Pull timer and pending-run bookkeeping out of React hooks into a plain class** so unmount, timeout and
   late replies can be tested with fake timers.
+
+### From the coach draft (Oct 12, Casebench 2)
+- **Run the real SDK with a fake `fetch`, not a hand-made mock client.** It showed that `messages.parse`
+  throws on a refusal before `stop_reason` can be read.
+- **Test automatic checks against the real fixes first:** the first spacing rule flagged scikit-learn's own
+  fix for #33362.
