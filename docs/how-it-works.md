@@ -5,7 +5,8 @@ A one-page map of the app's parts and where each lives. For the story of how it 
 
 ## The big picture
 
-There are two flows. One prepares the tasks ahead of time. The other runs when a student uses the app.
+There are three flows. One prepares the tasks ahead of time. The second runs a student's tests in the
+browser. The third, the coach, helps them prepare a pull request once a task is solved (section 5 below).
 
 ```
 Preparing tasks (developers and CI)          Using the app (the student's browser)
@@ -81,6 +82,40 @@ Supporting files:
 
 Shared types and limits: `apps/web/lib/runner/types.ts`.
 
+## 5. The coach: "Prepare your pull request"
+
+It appears on the task page once the task is solved. Everything runs in the student's browser.
+
+```
+content (scikit-learn's rules + coach.json per task)
+        │
+        ▼
+checks (no AI)                retrieval (BM25, no AI)
+ code, PR form, changelog      picks rule passages R1…R8
+        │                              │
+        └──────────────┬───────────────┘
+                       ▼
+review request (optional, student's own API key)
+ diff + PR text + changelog + answers + checks + rules → api.anthropic.com
+                       ▼
+panel: verdict, comments citing rules, covered/missed key points,
+tokens, cost estimate, time, thumbs up/down, "Download coach log"
+```
+
+| Part | File |
+|---|---|
+| scikit-learn's own rules (copied unchanged; the commit is in `SOURCE.md`) | `content/scikit-learn/contributing/` |
+| Questions and key points (rubric) per task | `content/scikit-learn/<slug>/coach.json` |
+| Automatic checks (scope, style, PR form, changelog) | `apps/web/lib/coach/checks.ts` |
+| Split the rules into passages (build time) | `apps/web/lib/coach/passages.ts` (reuses `packages/team-memory`) |
+| BM25 search over the passages (browser) | `apps/web/lib/coach/retrieval.ts` |
+| Request, JSON schema, API call, error handling | `apps/web/lib/coach/review.ts` |
+| Saved state, review log and key (localStorage) | `apps/web/lib/coach/storage.ts` |
+| The panel (4 stages) | `apps/web/components/coach/CoachPanel.tsx` |
+| End-to-end check (mocked API, run by hand) | `apps/web/e2e/coach.mjs` |
+
+The AI review has not yet run against the real API (build log 03).
+
 ## Where to look when…
 - **A task's text is wrong:** `content/scikit-learn/<slug>/about.json`, checked by
   `apps/web/lib/sklearn/about.test.ts`.
@@ -88,5 +123,8 @@ Shared types and limits: `apps/web/lib/runner/types.ts`.
 - **A run shows a confusing message:** `apps/web/lib/sklearn/runReport.ts` (wording) or
   `apps/web/lib/runner/runner.py` (what Python reports).
 - **Loading is slow or fails:** `apps/web/scripts/runner-worker.mjs` and `prepare-pyodide.mjs`.
-- **Testing the whole flow in a real browser:** `apps/web/e2e/sklearn-track.mjs` (run by hand).
+- **Testing the whole flow in a real browser:** `apps/web/e2e/sklearn-track.mjs` and `apps/web/e2e/coach.mjs`
+  (run by hand).
+- **The coach says something wrong:** the prompt and schema are in `apps/web/lib/coach/review.ts`, the
+  rubric in `coach.json`, and the rules it saw are in the coach log (`rules`).
 - **The team's notes and decisions:** `.claude/team/` (search them with `pnpm team:ask "…"`).
