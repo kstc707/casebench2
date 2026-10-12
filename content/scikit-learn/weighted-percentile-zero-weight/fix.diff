@@ -1,0 +1,13 @@
+diff --git a/sklearn/utils/stats.py b/sklearn/utils/stats.py
+index 453b0ab122c3706f66f12f3c264757aefbe427d0..7c4f9a9c8ad02bd71b31c5a3273cfc3a391742f7 100644
+--- a/sklearn/utils/stats.py
++++ b/sklearn/utils/stats.py
+@@ -189,7 +189,7 @@ def _weighted_percentile(
+                 )
+                 # Handle case where there are trailing 0 sample weight samples
+                 # and `percentile_indices` is already max index
+-                if next_index >= max_idx:
++                if next_index > max_idx:
+                     # use original `percentile_indices` again
+                     next_index = percentile_indices[col_idx]
+ 

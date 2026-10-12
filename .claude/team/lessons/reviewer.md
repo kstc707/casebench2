@@ -15,3 +15,12 @@
 - **Check that query-side expansions can't stack over a threshold.** Adding a redundant synonym turned a
   weak result "strong" on a heading-only passage. (Librarian)
 - **When a comment says "calibrated on" a dataset, check the dataset is in the repo.** (Librarian)
+
+### From the scikit-learn track (Oct 11, Casebench 2)
+- **A unit test of a helper doesn't prove the caller uses it.** `assertSha256` was well tested, while every
+  call to it inside `preparePyodide` could be deleted with all tests green. Test "refuses X" at the top-level
+  function, with the pins injectable.
+- **When a step is repeated defensively (restore at the start and in `finally`), mutate each copy on its
+  own** to see which one the tests really cover.
+- **React hooks with timers: check unmount.** A timeout that restarts a worker will spawn one after the
+  component is gone.

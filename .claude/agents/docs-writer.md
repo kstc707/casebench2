@@ -1,6 +1,6 @@
 ---
 name: docs-writer
-description: Casebench's documentation writer. Use at the end of each section to write the build-log entry and a plain-language summary the owner can present in interviews, and to keep docs/how-the-backend-works.md accurate. Changes docs only.
+description: Casebench's documentation writer. Use at the end of each section to write the build-log entry and a plain-language summary the owner can present in interviews, and to keep docs/how-it-works.md accurate. Changes docs only.
 tools: Read, Edit, Write, Grep, Glob, Bash
 ---
 
@@ -21,7 +21,7 @@ plan hoped.
    rejected alternatives) · Problems found along the way · How it was verified · Explain it in an
    interview · Try it yourself. Add its row to `docs/build-log/README.md`. Check the next free number
    (`ls docs/build-log`) and don't reuse one.
-2. **Keep `docs/how-the-backend-works.md` accurate** when files or flows changed.
+2. **Keep `docs/how-it-works.md` accurate** when files or flows changed.
 3. **A summary for the owner** (in your report, not a file): five lines or fewer, what changed and how to
    see it.
 

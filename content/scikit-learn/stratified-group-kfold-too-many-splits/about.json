@@ -1,0 +1,27 @@
+{
+  "issue": null,
+  "pr": {
+    "number": 33176,
+    "url": "https://github.com/scikit-learn/scikit-learn/pull/33176"
+  },
+  "quotes": [
+    {
+      "source": "changelog entry",
+      "text": ":class:`model_selection.StratifiedGroupKFold` now raises a `ValueError` when `n_splits` is greater than the number of unique groups, preventing degenerate folds.",
+      "url": "https://github.com/scikit-learn/scikit-learn/blob/237387b8e71e50d547d9130dd6a147bc83f37596/doc/whats_new/upcoming_changes/sklearn.model_selection/33176.fix.rst"
+    },
+    {
+      "source": "commit message",
+      "text": "FIX: StratifiedGroupKFold errors when n_splits > n_groups (#33176)",
+      "url": "https://github.com/scikit-learn/scikit-learn/commit/237387b8e71e50d547d9130dd6a147bc83f37596"
+    }
+  ],
+  "summary": "`StratifiedGroupKFold` splits data into folds while keeping each group in a single fold. If you ask for more splits than there are groups, some folds can't get a group at all. Its sibling `GroupKFold` already refuses this with a `ValueError` (\"Cannot have number of splits … greater than the number of groups\"); `StratifiedGroupKFold` didn't, and could produce degenerate folds. The fix adds the same check, and the existing test was widened to run on both classes.",
+  "teaches": "Validating input and giving clear errors",
+  "title": "StratifiedGroupKFold with more splits than groups",
+  "whereToLook": {
+    "file": "sklearn/model_selection/_split.py",
+    "hint": "Where it counts the groups with `np.unique`, before building the folds.",
+    "symbol": "StratifiedGroupKFold._iter_test_indices"
+  }
+}

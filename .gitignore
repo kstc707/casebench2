@@ -13,3 +13,4 @@ apps/web/public/duckdb/
 apps/web/public/pyodide/
 apps/web/public/pyodide-wheels/
 __pycache__/
+apps/web/.cache/

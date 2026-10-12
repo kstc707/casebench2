@@ -1,0 +1,27 @@
+{
+  "issue": null,
+  "pr": {
+    "number": 33362,
+    "url": "https://github.com/scikit-learn/scikit-learn/pull/33362"
+  },
+  "quotes": [
+    {
+      "source": "changelog entry",
+      "text": ":class:`pipeline.Pipeline` now raises an `AttributeError` when accessing attributes that are not available on an empty pipeline. It's therefore possible to call `dir` on an empty pipeline.",
+      "url": "https://github.com/scikit-learn/scikit-learn/blob/361a8e1cc81418f3f19014752da4817b94f72657/doc/whats_new/upcoming_changes/sklearn.pipeline/33362.fix.rst"
+    },
+    {
+      "source": "the test the fix added",
+      "text": "Check that dir() works on an empty pipeline",
+      "url": "https://github.com/scikit-learn/scikit-learn/commit/361a8e1cc81418f3f19014752da4817b94f72657"
+    }
+  ],
+  "summary": "`dir(obj)` lists an object's attributes. scikit-learn estimators keep only the attributes for which `hasattr` is true, and `hasattr` treats only an `AttributeError` as \"not there\". On an empty `Pipeline([])`, attributes that look at the first or last step read `self.steps[0]` or `self.steps[-1]`, which raise `IndexError` on an empty list, so `dir(pipe)` crashed. The fix turns that case into an `AttributeError`.",
+  "teaches": "Python's attribute protocol in an estimator",
+  "title": "Calling dir() on an empty Pipeline",
+  "whereToLook": {
+    "file": "sklearn/pipeline.py",
+    "hint": "Also `classes_`, `n_features_in_` and `feature_names_in_`: every place that reads a step from `self.steps`.",
+    "symbol": "Pipeline._final_estimator"
+  }
+}

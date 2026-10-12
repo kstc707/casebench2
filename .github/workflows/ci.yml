@@ -18,3 +18,33 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+
+  # The scikit-learn tasks, checked with the same Pyodide runner the browser uses (section 1, step 7):
+  # each task's "before" file is the shipped 1.8.0 file, its failToPass tests fail and passToPass tests
+  # pass on it, and every required test passes with the real fix. Slower (a few minutes), so it runs
+  # as its own job; the Pyodide release tarball (337 MB) is cached by its pinned SHA-256.
+  tasks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Restore and save separately (not actions/cache), so the tarball is saved as soon as it is
+      # downloaded, even when a later check fails.
+      - id: pyodide-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/web/.cache/pyodide
+          key: pyodide-tarball-192b5864e6e6d30ab074861af800cb8b4acb0998ef0f9342c3367448aeb86645
+      - run: pnpm --filter @casebench2/web pyodide
+      - if: steps.pyodide-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: apps/web/.cache/pyodide
+          key: pyodide-tarball-192b5864e6e6d30ab074861af800cb8b4acb0998ef0f9342c3367448aeb86645
+      - run: pnpm test:pyodide
+      - run: pnpm --filter @casebench2/web check-tasks
