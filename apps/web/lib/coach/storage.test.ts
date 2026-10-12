@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StorageLike } from "../progress";
-import { API_KEY_KEY, coachKey, coachLogJson, emptyCoachState, readApiKey, readCoachState, writeApiKey, writeCoachState } from "./storage";
+import { API_KEY_KEYS, coachKey, coachLogJson, emptyCoachState, readApiKey, readCoachState, writeApiKey, writeCoachState } from "./storage";
 
 function memory(initial: Record<string, string> = {}): StorageLike & { data: Map<string, string> } {
   const data = new Map(Object.entries(initial));
@@ -39,20 +39,23 @@ describe("coach state", () => {
     for (const s of [throwing, null]) {
       expect(readCoachState("t", s)).toEqual(emptyCoachState());
       expect(writeCoachState("t", emptyCoachState(), s)).toBe(false);
-      expect(readApiKey(s)).toBe("");
-      expect(writeApiKey("k", s)).toBe(false);
+      expect(readApiKey("gemini", s)).toBe("");
+      expect(writeApiKey("claude", "k", s)).toBe(false);
     }
   });
 });
 
-describe("the API key", () => {
-  it("is saved only when asked, and forgotten with an empty string", () => {
+describe("the API keys", () => {
+  it("are saved per provider only when asked, and forgotten with an empty string", () => {
     const s = memory();
-    expect(readApiKey(s)).toBe("");
-    writeApiKey("sk-ant-x", s);
-    expect(s.data.get(API_KEY_KEY)).toBe("sk-ant-x");
-    writeApiKey("", s);
-    expect(s.data.has(API_KEY_KEY)).toBe(false);
+    expect(readApiKey("gemini", s)).toBe("");
+    writeApiKey("claude", "sk-ant-x", s);
+    writeApiKey("gemini", "AIzaTEST", s);
+    expect(s.data.get(API_KEY_KEYS.claude)).toBe("sk-ant-x");
+    expect(s.data.get("casebench2.geminiKey.v1")).toBe("AIzaTEST");
+    writeApiKey("claude", "", s);
+    expect(s.data.has(API_KEY_KEYS.claude)).toBe(false);
+    expect(readApiKey("gemini", s)).toBe("AIzaTEST");
   });
 });
 
