@@ -1,0 +1,94 @@
+{
+  "changelog": {
+    "folder": "sklearn.pipeline",
+    "type": "fix",
+    "mentions": [
+      "Pipeline"
+    ]
+  },
+  "questions": [
+    {
+      "id": "input",
+      "prompt": "What did a user do to hit this bug, and what went wrong?",
+      "points": [
+        {
+          "id": "empty",
+          "text": "Create an empty Pipeline([]).",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "pipe = Pipeline([])"
+          }
+        },
+        {
+          "id": "dir",
+          "text": "Call dir() on it.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "attrs = dir(pipe)"
+          }
+        },
+        {
+          "id": "indexerror",
+          "text": "It crashed with IndexError.",
+          "evidence": {
+            "file": "source.md",
+            "quote": "IndexError: list index out of range"
+          }
+        }
+      ]
+    },
+    {
+      "id": "why",
+      "prompt": "Why does turning IndexError into AttributeError fix dir()?",
+      "points": [
+        {
+          "id": "hasattr",
+          "text": "scikit-learn's __dir__ keeps only the attributes for which hasattr is true.",
+          "evidence": {
+            "file": "source.md",
+            "quote": "if hasattr(self, attr)"
+          }
+        },
+        {
+          "id": "attributeerror",
+          "text": "hasattr only treats AttributeError as 'not there', so the properties now raise AttributeError.",
+          "evidence": {
+            "file": "fix.diff",
+            "quote": "raise AttributeError("
+          },
+          "inferred": true
+        },
+        {
+          "id": "no-steps",
+          "text": "On an empty pipeline there's no step to read.",
+          "evidence": {
+            "file": "fix.diff",
+            "quote": "# An empty pipeline has no final estimator"
+          }
+        }
+      ]
+    },
+    {
+      "id": "test",
+      "prompt": "What does the new test check?",
+      "points": [
+        {
+          "id": "works",
+          "text": "dir() works on an empty pipeline.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "\"\"\"Check that dir() works on an empty pipeline\"\"\""
+          }
+        },
+        {
+          "id": "steps",
+          "text": "The result still lists real attributes such as steps.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "assert \"steps\" in attrs"
+          }
+        }
+      ]
+    }
+  ]
+}

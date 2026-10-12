@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SiteHeader } from "../../../components/SiteHeader";
 import { TaskWorkspace } from "../../../components/task/TaskWorkspace";
+import { loadRulePassages } from "../../../lib/coach/passages";
 import { getTask, listTasks } from "../../../lib/tasks";
 
 // One static page per task, built from content/scikit-learn; any other slug is a 404.
@@ -29,7 +30,7 @@ export default async function TaskPage({ params }: { params: Promise<{ slug: str
           </>
         }
       />
-      <TaskWorkspace key={task.slug} task={task} />
+      <TaskWorkspace key={task.slug} task={task} rulePassages={loadRulePassages()} />
     </>
   );
 }

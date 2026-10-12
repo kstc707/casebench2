@@ -1,0 +1,94 @@
+{
+  "changelog": {
+    "folder": "sklearn.feature_extraction",
+    "type": "fix",
+    "mentions": [
+      "reconstruct_from_patches_2d"
+    ]
+  },
+  "questions": [
+    {
+      "id": "input",
+      "prompt": "Which image and patch sizes make the old reconstruct_from_patches_2d wrong?",
+      "points": [
+        {
+          "id": "equal-dim",
+          "text": "A patch dimension equals the image dimension.",
+          "evidence": {
+            "file": "source.md",
+            "quote": "when a patch dimension equals the corresponding image\n  dimension."
+          }
+        },
+        {
+          "id": "example",
+          "text": "Example: 128×128 patches of a 128×256 image.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "((128, 256), (128, 128)),  # patch_h == image_h"
+          }
+        }
+      ]
+    },
+    {
+      "id": "why",
+      "prompt": "Why does adding n_h and n_w to the divisor fix it?",
+      "points": [
+        {
+          "id": "overlap",
+          "text": "Each pixel is divided by how many patches overlap it.",
+          "evidence": {
+            "file": "fix.diff",
+            "quote": "# divide by the amount of overlap"
+          }
+        },
+        {
+          "id": "positions",
+          "text": "n_h is the number of patch positions along the height (i_h - p_h + 1); a pixel can't be covered by more patches than that.",
+          "evidence": {
+            "file": "before/sklearn/feature_extraction/image.py",
+            "quote": "n_h = i_h - p_h + 1"
+          },
+          "inferred": true
+        },
+        {
+          "id": "new-divisor",
+          "text": "The new divisor takes the minimum with n_h and n_w too.",
+          "evidence": {
+            "file": "fix.diff",
+            "quote": "min(i + 1, p_h, n_h, i_h - i) * min(j + 1, p_w, n_w, i_w - j)"
+          }
+        }
+      ]
+    },
+    {
+      "id": "test",
+      "prompt": "What does the new test do, and what must be true at the end?",
+      "points": [
+        {
+          "id": "roundtrip",
+          "text": "It cuts a random image into patches and rebuilds it.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "reconstructed = reconstruct_from_patches_2d(patches, image_size)"
+          }
+        },
+        {
+          "id": "equal",
+          "text": "The rebuilt image must equal the original.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "assert_allclose(image, reconstructed)"
+          }
+        },
+        {
+          "id": "channels",
+          "text": "One case has colour channels.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "# patch_h == image_h, with channels"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -10,7 +10,7 @@ const slugs = sources.tasks.map((t) => t.slug);
 describe("scikit-learn content", () => {
   it("lists the 5 tasks in sources.json, and a folder exists for each and nothing else", () => {
     expect(slugs).toHaveLength(5);
-    const folders = readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name);
+    const folders = readdirSync(root, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name !== "contributing").map((d) => d.name);
     expect(folders.sort()).toEqual([...slugs].sort());
     expect(readFileSync(path.join(root, "LICENSE"), "utf8")).toContain("BSD 3-Clause License");
   });

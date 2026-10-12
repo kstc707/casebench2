@@ -5,6 +5,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import type { TaskCoach } from "./coach/types";
 import type { OfflineData } from "./runner/types";
 import type { SklearnSources, SklearnTask } from "./sklearn/taskRules";
 
@@ -43,6 +44,8 @@ export interface TaskDetail extends TaskSummary {
   tests: string;
   /** The real fix, shown only after solving. */
   fixDiff: string;
+  /** The coach's questions and changelog details (coach.json). */
+  coach: TaskCoach;
 }
 
 /** content/scikit-learn, found from the app folder (next build, next dev) or the repo root (Vitest). */
@@ -84,5 +87,6 @@ export function getTask(slug: string, dir = contentDir()): TaskDetail | null {
     before: read(`before/${task.file}`),
     tests: read(`tests/${task.testFile}`),
     fixDiff: read("fix.diff"),
+    coach: readJson<TaskCoach>(path.join(dir, slug, "coach.json")),
   };
 }

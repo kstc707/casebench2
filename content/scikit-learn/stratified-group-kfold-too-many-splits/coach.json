@@ -1,0 +1,93 @@
+{
+  "changelog": {
+    "folder": "sklearn.model_selection",
+    "type": "fix",
+    "mentions": [
+      "StratifiedGroupKFold"
+    ]
+  },
+  "questions": [
+    {
+      "id": "input",
+      "prompt": "What input did StratifiedGroupKFold accept that it should have refused?",
+      "points": [
+        {
+          "id": "more-splits",
+          "text": "n_splits greater than the number of unique groups.",
+          "evidence": {
+            "file": "source.md",
+            "quote": "now raises a `ValueError` when\n  `n_splits` is greater than the number of unique groups"
+          }
+        },
+        {
+          "id": "degenerate",
+          "text": "That gives degenerate folds.",
+          "evidence": {
+            "file": "source.md",
+            "quote": "preventing degenerate folds"
+          }
+        }
+      ]
+    },
+    {
+      "id": "why",
+      "prompt": "How does the fix detect the problem, and why raise ValueError with that message?",
+      "points": [
+        {
+          "id": "count",
+          "text": "It counts the groups from np.unique's counts.",
+          "evidence": {
+            "file": "fix.diff",
+            "quote": "n_groups = len(groups_cnt)"
+          }
+        },
+        {
+          "id": "compare",
+          "text": "It compares n_splits with the number of groups.",
+          "evidence": {
+            "file": "fix.diff",
+            "quote": "if self.n_splits > n_groups:"
+          }
+        },
+        {
+          "id": "message",
+          "text": "The message matches GroupKFold's (\"Cannot have number of splits ... greater\"), so both classes behave the same.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "match=\"Cannot have number of splits.*greater\""
+          }
+        }
+      ]
+    },
+    {
+      "id": "test",
+      "prompt": "How were the tests changed, and why did another test need n_splits=3?",
+      "points": [
+        {
+          "id": "parametrized",
+          "text": "test_group_kfold now runs the same check on the class it's given, not only GroupKFold.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "next(kfold(n_splits=3).split(X, y, groups))"
+          }
+        },
+        {
+          "id": "groups",
+          "text": "The test data has only 2 groups.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "groups = np.array([1, 1, 1, 2, 2])"
+          }
+        },
+        {
+          "id": "other-test",
+          "text": "Another test used the default number of splits and now passes n_splits=3.",
+          "evidence": {
+            "file": "tests.diff",
+            "quote": "StratifiedGroupKFold(n_splits=3),"
+          }
+        }
+      ]
+    }
+  ]
+}
