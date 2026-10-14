@@ -3,14 +3,15 @@
  * blocked or corrupt storage means "start fresh", never a crash).
  *
  *   casebench2.coach.v1.<slug>     the PR form, changelog fragment, answers, self-check ticks, review log
+ *   casebench2.geminiKey.v1        the student's Google AI Studio key, only if they choose to save it
  *   casebench2.anthropicKey.v1     the student's Anthropic API key, only if they choose to save it
  */
 import { browserStorage, type StorageLike } from "../progress";
 import { EMPTY_PR, type PrForm } from "./checks";
-import type { CoachLogEntry } from "./review";
+import type { CoachLogEntry, Provider } from "./review";
 
 export const coachKey = (slug: string) => `casebench2.coach.v1.${slug}`;
-export const API_KEY_KEY = "casebench2.anthropicKey.v1";
+export const API_KEY_KEYS: Record<Provider, string> = { gemini: "casebench2.geminiKey.v1", claude: "casebench2.anthropicKey.v1" };
 
 export interface CoachState {
   pr: PrForm;
@@ -58,20 +59,20 @@ export function writeCoachState(slug: string, state: CoachState, storage: Storag
   }
 }
 
-export function readApiKey(storage: StorageLike | null = browserStorage()): string {
+export function readApiKey(provider: Provider, storage: StorageLike | null = browserStorage()): string {
   try {
-    return storage?.getItem(API_KEY_KEY) ?? "";
+    return storage?.getItem(API_KEY_KEYS[provider]) ?? "";
   } catch {
     return "";
   }
 }
 
 /** Saves the key, or removes it with "". Returns false when it couldn't be saved. */
-export function writeApiKey(key: string, storage: StorageLike | null = browserStorage()): boolean {
+export function writeApiKey(provider: Provider, key: string, storage: StorageLike | null = browserStorage()): boolean {
   try {
     if (!storage) return false;
-    if (key === "") storage.removeItem(API_KEY_KEY);
-    else storage.setItem(API_KEY_KEY, key);
+    if (key === "") storage.removeItem(API_KEY_KEYS[provider]);
+    else storage.setItem(API_KEY_KEYS[provider], key);
     return true;
   } catch {
     return false;

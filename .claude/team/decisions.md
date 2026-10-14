@@ -8,6 +8,17 @@ Casebench 1's history lives in the `kstc707/casebench` repo (`.claude/team/decis
 
 ---
 
+### 2026-10-12 · The coach's AI review uses Gemini's free tier by default; Claude stays an option · **Decided (owner)**
+- **What:** the owner can't get an Anthropic API key, so the AI review defaults to a free Gemini model,
+  using the student's own key from Google AI Studio. The Claude path stays as an option for anyone who has a
+  key.
+- **Why (owner):** *"use a gemini free model can't get api"*.
+- **Trade-offs:**
+  - On the free tier Google may use prompts to improve its products. Here that means the student's code
+    and answers, so the page must say so.
+  - Free models get retired (lesson from Casebench 1), so the model name lives in one config place and
+    the page lists the models the key can actually use.
+
 ### 2026-10-12 · One narrow exception to "never string-match error messages" · **Decided (team lead)**
 - **What:** the coach retries without refusal fallbacks only when a 400's message mentions fallback or beta.
   The SDK has no typed error for "this beta isn't accepted". The exception is documented in the code, and

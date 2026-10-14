@@ -4,18 +4,18 @@ import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import type { Passage } from "@casebench2/team-memory/src/corpus";
 import { changelogChecks, codeChecks, fragmentPath, prBody, prChecks, PR_SECTIONS, unifiedDiff, type CheckResult, type PrForm } from "../../lib/coach/checks";
 import { indexRules, retrieveRules, REVIEW_QUERIES } from "../../lib/coach/retrieval";
+import { buildClaudeRequest, CLAUDE_KEY_FORMAT, CLAUDE_MODEL, claudeClient, runClaudeReview } from "../../lib/coach/claude";
 import {
-  API_KEY_FORMAT,
-  browserClient,
-  buildReviewRequest,
-  describeViolation,
-  MODEL,
-  redactKey,
-  reviewContext,
-  runReview,
-  type CoachLogEntry,
-  type ReviewOutcome,
-} from "../../lib/coach/review";
+  buildGeminiRequest,
+  describeGeminiError,
+  GEMINI_FALLBACK_MODEL,
+  GEMINI_KEY_FORMAT,
+  geminiClient,
+  listReviewModels,
+  runGeminiReview,
+  type GeminiModelChoice,
+} from "../../lib/coach/gemini";
+import { describeViolation, redactKey, reviewContext, type CoachLogEntry, type Provider, type ReviewOutcome } from "../../lib/coach/review";
 import { coachLogJson, readApiKey, readCoachState, writeApiKey, writeCoachState, type CoachState } from "../../lib/coach/storage";
 import type { TaskDetail } from "../../lib/tasks";
 
@@ -240,6 +240,24 @@ function Question({
   );
 }
 
+/** What differs between the two providers on the page. */
+const PROVIDERS: Record<Provider, { label: string; keyLabel: string; placeholder: string; host: string; keyHelp: string }> = {
+  gemini: {
+    label: "Gemini (free tier)",
+    keyLabel: "Google AI Studio API key",
+    placeholder: "AIza…",
+    host: "generativelanguage.googleapis.com",
+    keyHelp: "Create a free key at aistudio.google.com.",
+  },
+  claude: {
+    label: "Claude (Anthropic key)",
+    keyLabel: "Anthropic API key",
+    placeholder: "sk-ant-…",
+    host: "api.anthropic.com",
+    keyHelp: "Create a key in the Anthropic Console.",
+  },
+};
+
 function AiReview({
   task,
   state,
@@ -259,29 +277,65 @@ function AiReview({
   onRate: (logIndex: number, comment: string, rating: "up" | "down") => void;
   announce: (text: string) => void;
 }) {
-  const [key, setKey] = useState("");
-  const [savedKey, setSavedKey] = useState(false);
+  const [provider, setProvider] = useState<Provider>("gemini");
+  const [keys, setKeys] = useState<Record<Provider, string>>({ gemini: "", claude: "" });
+  const [saved, setSaved] = useState<Record<Provider, boolean>>({ gemini: false, claude: false });
+  const [models, setModels] = useState<GeminiModelChoice[] | null>(null);
+  const [model, setModel] = useState(GEMINI_FALLBACK_MODEL);
+  const [modelNote, setModelNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [keyProblem, setKeyProblem] = useState<string | null>(null);
   const index = useMemo(() => indexRules(rulePassages), [rulePassages]);
   useEffect(() => {
-    const k = readApiKey();
-    setKey(k);
-    setSavedKey(k !== "");
+    const g = readApiKey("gemini");
+    const c = readApiKey("claude");
+    setKeys({ gemini: g, claude: c });
+    setSaved({ gemini: g !== "", claude: c !== "" });
   }, []);
 
+  const p = PROVIDERS[provider];
+  const key = keys[provider].trim();
+  const keyFormat = provider === "gemini" ? GEMINI_KEY_FORMAT : CLAUDE_KEY_FORMAT;
   const latest = state.log.length ? state.log[state.log.length - 1] : null;
   const latestIndex = state.log.length - 1;
 
-  const [keyProblem, setKeyProblem] = useState<string | null>(null);
+  function keyIsUsable(): boolean {
+    if (keyFormat.test(key)) {
+      setKeyProblem(null);
+      return true;
+    }
+    const msg =
+      provider === "gemini"
+        ? "That doesn't look like a Google AI Studio key (letters, digits, - and _ only; they usually start with AIza). Nothing was sent."
+        : "That doesn't look like an Anthropic API key (they start with sk-ant-). Nothing was sent.";
+    setKeyProblem(msg);
+    announce(msg);
+    return false;
+  }
+
+  async function findModels() {
+    if (!keyIsUsable()) return;
+    setModelNote("Looking up your models…");
+    try {
+      const found = await listReviewModels(geminiClient(key));
+      setModels(found);
+      if (found.length) {
+        setModel(found[0].id);
+        setModelNote(`${found.length} model${found.length === 1 ? "" : "s"} available to your key. The newest flash model is selected.`);
+      } else {
+        setModel(GEMINI_FALLBACK_MODEL);
+        setModelNote(`No flash models were listed for your key; ${GEMINI_FALLBACK_MODEL} will be tried.`);
+      }
+    } catch (err) {
+      const { message } = describeGeminiError(err);
+      setModels(null);
+      setModel(GEMINI_FALLBACK_MODEL);
+      setModelNote(redactKey(`Couldn't list your models (${message}) ${GEMINI_FALLBACK_MODEL} will be tried.`, key));
+    }
+  }
 
   async function review() {
-    const apiKey = key.trim();
-    if (!API_KEY_FORMAT.test(apiKey)) {
-      setKeyProblem("That doesn't look like an Anthropic API key (they start with sk-ant-). Nothing was sent.");
-      announce("That doesn't look like an Anthropic API key. Nothing was sent.");
-      return;
-    }
-    setKeyProblem(null);
+    if (!keyIsUsable()) return;
     setBusy(true);
     announce("Reviewing…");
     const failing = checks.filter((c) => !c.ok).map((c) => c.title);
@@ -291,17 +345,29 @@ function AiReview({
       diff,
       prBody: prBody(state.pr),
       changelog: { path: fragmentPath(task.coach.changelog.folder, task.coach.changelog.type), text: state.changelog },
-      answers: task.coach.questions.map((q) => ({ questionId: q.id, prompt: q.prompt, answer: state.answers[q.id] ?? "", points: q.points.map((p) => ({ id: p.id, text: p.text })) })),
+      answers: task.coach.questions.map((q) => ({ questionId: q.id, prompt: q.prompt, answer: state.answers[q.id] ?? "", points: q.points.map((pt) => ({ id: pt.id, text: pt.text })) })),
       checks,
       rules,
     };
-    const request = buildReviewRequest(input);
+    const context = reviewContext(input);
+    let request: unknown;
+    let raw: ReviewOutcome;
+    if (provider === "gemini") {
+      const req = buildGeminiRequest(model, input);
+      request = req;
+      raw = await runGeminiReview(geminiClient(key), req, context);
+    } else {
+      const req = buildClaudeRequest(input);
+      request = req;
+      raw = await runClaudeReview(claudeClient(key) as never, req, context);
+    }
     // The key is removed from anything the API echoes back before it is shown or logged.
-    const outcome = redactKey(await runReview(browserClient(apiKey) as never, request, reviewContext(input)), apiKey);
+    const outcome = redactKey(raw, key);
     onLog({
       at: new Date().toISOString(),
       slug: task.slug,
-      model: outcome.model ?? MODEL,
+      provider,
+      model: outcome.model ?? (provider === "gemini" ? model : CLAUDE_MODEL),
       request,
       rules,
       outcome,
@@ -324,37 +390,95 @@ function AiReview({
   return (
     <div role="tabpanel" aria-label="AI review">
       <p className="small">
-        Optional. One request reviews your change, PR text, changelog and answers against scikit-learn&rsquo;s rules, using{" "}
-        <strong>your own Anthropic API key</strong>. It costs you a few cents per review; the estimate is shown after each one.
+        Optional. One request reviews your change, PR text, changelog and answers against scikit-learn&rsquo;s rules, with{" "}
+        <strong>your own key</strong>. Gemini&rsquo;s free tier costs nothing (within its daily limits); Claude costs a few cents per
+        review, and the estimate is shown after each one.
       </p>
+      <fieldset className="providers">
+        <legend className="small">Who reviews it</legend>
+        {(Object.keys(PROVIDERS) as Provider[]).map((id) => (
+          <label key={id} className="point">
+            <input
+              type="radio"
+              name="provider"
+              value={id}
+              checked={provider === id}
+              onChange={() => {
+                setProvider(id);
+                setKeyProblem(null);
+              }}
+            />{" "}
+            {PROVIDERS[id].label}
+          </label>
+        ))}
+      </fieldset>
       <div className="key-note small" data-testid="key-note">
         <p>
           <strong>Where your key goes.</strong> If you save it, it is kept in this browser&rsquo;s localStorage, on this device
-          only. It is sent only to <code>api.anthropic.com</code>, never to Casebench. Any script running on this page could
-          read it, so use a key with a low spending limit, and remove it when you&rsquo;re done.
+          only. It is sent only to <code>{p.host}</code>, never to Casebench. Any script running on this page could read it,
+          so remove it when you&rsquo;re done{provider === "claude" ? ", and use a key with a low spending limit" : ""}.
         </p>
+        {provider === "gemini" && (
+          <p data-testid="privacy-note">
+            <strong>Privacy.</strong> On the free tier, Google may use what you send (your code, PR text and answers) to
+            improve its products. Don&rsquo;t include anything private.
+          </p>
+        )}
       </div>
-      <Field label="Anthropic API key">
-        {(id) => <input id={id} type="password" autoComplete="new-password" value={key} onChange={(e) => setKey(e.target.value)} placeholder="sk-ant-…" />}
+      <Field label={p.keyLabel}>
+        {(id) => (
+          <input
+            id={id}
+            type="password"
+            autoComplete="new-password"
+            value={keys[provider]}
+            onChange={(e) => setKeys((k) => ({ ...k, [provider]: e.target.value }))}
+            placeholder={p.placeholder}
+          />
+        )}
       </Field>
+      <p className="small muted">{p.keyHelp}</p>
+      {provider === "gemini" && (
+        <div className="row">
+          <button type="button" onClick={() => void findModels()} disabled={key === ""}>
+            Find my models
+          </button>
+          <Field label="Model">
+            {(id) => (
+              <select id={id} value={model} onChange={(e) => setModel(e.target.value)} data-testid="model-select">
+                {(models && models.length ? models : [{ id: GEMINI_FALLBACK_MODEL, label: `${GEMINI_FALLBACK_MODEL} (default)` }]).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+        </div>
+      )}
+      {provider === "gemini" && modelNote && (
+        <p className="small muted" data-testid="model-note">
+          {modelNote}
+        </p>
+      )}
       <div className="row">
-        <button type="button" onClick={() => setSavedKey(writeApiKey(key.trim()) && key.trim() !== "")} disabled={key.trim() === ""}>
+        <button type="button" onClick={() => setSaved((sv) => ({ ...sv, [provider]: writeApiKey(provider, key) && key !== "" }))} disabled={key === ""}>
           Save key in this browser
         </button>
-        {savedKey && (
+        {saved[provider] && (
           <button
             type="button"
             className="link"
             onClick={() => {
-              writeApiKey("");
-              setKey("");
-              setSavedKey(false);
+              writeApiKey(provider, "");
+              setKeys((k) => ({ ...k, [provider]: "" }));
+              setSaved((sv) => ({ ...sv, [provider]: false }));
             }}
           >
             Remove saved key
           </button>
         )}
-        <button type="button" className="primary" onClick={() => void review()} disabled={busy || key.trim() === ""}>
+        <button type="button" className="primary" onClick={() => void review()} disabled={busy || key === ""}>
           {busy ? "Reviewing…" : "Review my pull request"}
         </button>
       </div>
@@ -372,7 +496,7 @@ function AiReview({
             Download coach log (JSON)
           </button>{" "}
           <span className="muted">
-            {state.log.length} review{state.log.length === 1 ? "" : "s"}, with inputs, outputs, tokens, time and your ratings.
+            {state.log.length} review{state.log.length === 1 ? "" : "s"}, with inputs, outputs, provider, model, tokens, time and your ratings.
           </span>
         </p>
       )}
@@ -380,9 +504,9 @@ function AiReview({
   );
 }
 
-function usageLine(model: string, usage: { input_tokens: number; output_tokens: number }, cost: number | null, latencyMs: number): string {
+function usageLine(model: string, usage: { input_tokens: number; output_tokens: number }, cost: number | null, latencyMs: number, freeTier = false): string {
   const tokens = `${usage.input_tokens.toLocaleString("en")} input + ${usage.output_tokens.toLocaleString("en")} output tokens`;
-  const price = cost === null ? "price unknown for this model" : `about $${cost.toFixed(3)} (estimate)`;
+  const price = freeTier ? "$0 on the free tier" : cost === null ? "price unknown for this model" : `about $${cost.toFixed(3)} (estimate)`;
   return `${tokens} · ${price} · ${(latencyMs / 1000).toFixed(1)} s · ${model}`;
 }
 
@@ -396,7 +520,7 @@ function ReviewResult({ entry, task, onRate }: { entry: CoachLogEntry; task: Tas
         </p>
         {o.usage && (
           <p className="small" data-testid="review-usage">
-            {usageLine(o.model ?? MODEL, o.usage, o.costUsd ?? null, o.latencyMs)}
+            {usageLine(o.model ?? entry.model, o.usage, o.costUsd ?? null, o.latencyMs, o.freeTier)}
           </p>
         )}
       </div>
@@ -462,7 +586,7 @@ function ReviewResult({ entry, task, onRate }: { entry: CoachLogEntry; task: Tas
         </div>
       )}
       <p className="small muted" data-testid="review-usage">
-        {usageLine(o.model, o.usage, o.costUsd, o.latencyMs)}
+        {usageLine(o.model, o.usage, o.costUsd, o.latencyMs, o.freeTier)}
         {o.fallbacks === "off" ? " · refusal fallbacks unavailable for this request" : ""}
       </p>
     </div>

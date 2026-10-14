@@ -656,3 +656,16 @@ button.link {
   padding: 0 10px;
   margin: 8px 0;
 }
+
+.providers {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 8px 0;
+  padding: 4px 10px;
+}
+
+.field select {
+  font: inherit;
+  font-size: 14px;
+  max-width: 100%;
+}
