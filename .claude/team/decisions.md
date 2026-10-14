@@ -8,6 +8,16 @@ Casebench 1's history lives in the `kstc707/casebench` repo (`.claude/team/decis
 
 ---
 
+### 2026-10-14 · Deployed on Vercel at casebench2.vercel.app · **Decided (owner)**
+- **What:** the owner asked to deploy ("deploy it"). Vercel project `casebench2` (team CB), linked to the
+  repo, root `apps/web`, production branch `main`. The build now prepares the self-hosted Pyodide files
+  before `next build` (PR #4).
+- **Why:** the owner wanted to use the app without running it locally.
+- **Notes:**
+  - The first production deploy came from branch `claude/deploy-vercel`.
+  - Every push to `main` now deploys production.
+  - It's public: anyone with the link can use it.
+
 ### 2026-10-12 · The coach's AI review uses Gemini's free tier by default; Claude stays an option · **Decided (owner)**
 - **What:** the owner can't get an Anthropic API key, so the AI review defaults to a free Gemini model,
   using the student's own key from Google AI Studio. The Claude path stays as an option for anyone who has a
